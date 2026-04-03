@@ -106,22 +106,43 @@
 
     [self.navigationController setNavigationBarHidden:YES animated:YES];
 
-    /* setup the media player instance, give it a delegate and something to draw into */
-    _mediaplayer = [[VLCMediaPlayer alloc] init];
-    _mediaplayer.delegate = self;
-    _mediaplayer.drawable = self.movieView;
+     /* setup the media player instance, give it a delegate and something to draw into */
+     if (!_mediaplayer) {
+         _mediaplayer = [[VLCMediaPlayer alloc] init];
+         _mediaplayer.delegate = self;
+         _mediaplayer.drawable = self.movieView;
 
-    /* enable debug logging from libvlc here */
-    _mediaplayer.libraryInstance.debugLogging = YES;
+         /* enable debug logging from libvlc here */
+         _mediaplayer.libraryInstance.debugLogging = YES;
 
-    /* listen for notifications from the player */
-    [_mediaplayer addObserver:self forKeyPath:@"time" options:0 context:nil];
-    [_mediaplayer addObserver:self forKeyPath:@"remainingTime" options:0 context:nil];
+         /* listen for notifications from the player */
+         [_mediaplayer addObserver:self forKeyPath:@"time" options:0 context:nil];
+         [_mediaplayer addObserver:self forKeyPath:@"remainingTime" options:0 context:nil];
 
-    /* create a media object and give it to the player */
-    _mediaplayer.media = [VLCMedia mediaWithURL:_url];
+         /* create a media object and give it to the player */
+         _mediaplayer.media = [VLCMedia mediaWithURL:_url];
+     } else {
+         /* Re-attach the drawable when returning from background */
+         _mediaplayer.drawable = self.movieView;
 
-    [_mediaplayer play];
+         /* Re-enable idle timer if playing */
+         if ([_mediaplayer isPlaying]) {
+             [UIApplication sharedApplication].idleTimerDisabled = YES;
+         }
+     }
+
+     /* Restart playback if it was paused/stopped */
+     if (_mediaplayer.state == VLCMediaPlayerStatePlaying) {
+         /* Player is still playing, just ensure drawable is attached */
+     } else if (_mediaplayer.state == VLCMediaPlayerStateOpening ||
+                _mediaplayer.state == VLCMediaPlayerStateBuffering) {
+         /* Continue opening/buffering */
+     } else {
+         /* Start playback if we have media */
+         if (_mediaplayer.media) {
+             [_mediaplayer play];
+         }
+     }
 
     if (self.controllerPanel.hidden)
         [self toggleControlsVisible];
@@ -143,8 +164,10 @@
             NSLog(@"we weren't an observer yet");
         }
 
-        if (_mediaplayer.media)
-            [_mediaplayer stop];
+           /* Pause playback when leaving the view */
+         if (_mediaplayer.media) {
+             [_mediaplayer pause];
+          }
 
         if (_mediaplayer)
             _mediaplayer = nil;
@@ -153,7 +176,10 @@
     if (_idleTimer) {
         [_idleTimer invalidate];
         _idleTimer = nil;
-    }
+     }
+
+       /* Re-enable idle timer when leaving full screen */
+     [UIApplication sharedApplication].idleTimerDisabled = NO;
 
     [self.navigationController setNavigationBarHidden:NO animated:YES];
     [[UIApplication sharedApplication] setStatusBarHidden:NO withAnimation:UIStatusBarAnimationFade];

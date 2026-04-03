@@ -77,11 +77,28 @@
 - (void)applicationWillEnterForeground:(UIApplication *)application
 {
     // Called as part of the transition from the background to the inactive state; here you can undo many of the changes made on entering the background.
+
+     // Re-enable idle timer if media is playing to prevent screen from turning off
+     if (_playbackViewController && _playbackViewController.mediaplayer) {
+         BOOL isPlaying = [_playbackViewController.mediaplayer isPlaying];
+         [UIApplication sharedApplication].idleTimerDisabled = isPlaying;
+     }
 }
 
 - (void)applicationDidBecomeActive:(UIApplication *)application
 {
     // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+
+     // Refresh the playback view if we have a playback VC
+     if (_playbackViewController && _playbackViewController.mediaplayer) {
+         // Force the player to redraw by re-assigning the drawable
+         UIView *drawable = _playbackViewController.mediaplayer.drawable;
+         [_playbackViewController.mediaplayer setDrawable:drawable];
+
+          // Re-enable idle timer if media is playing
+          BOOL isPlaying = [_playbackViewController.mediaplayer isPlaying];
+          [UIApplication sharedApplication].idleTimerDisabled = isPlaying;
+      }
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application
