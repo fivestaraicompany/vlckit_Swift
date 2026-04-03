@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /Users/jgoh/vlckit/MobileVLCKit.xcodeproj -name *.pbxproj -exec cat {})",
+      "Bash(2)"
+    ]
+  }
+}
