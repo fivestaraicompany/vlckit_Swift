@@ -8,7 +8,7 @@ It supports playback, but also  active streaming and media to file conversations
 
 It is open-source software licensed under LGPLv2.1 or later, available in source code and binary form from the [VideoLAN website].
 
-You can also integrate VLCKit and its mobile version MobileVLCKit easily via [CocoaPods].
+You can also integrate VLCKit and its mobile version MobileVLCKit easily via [CocoaPods] or [Swift Package Manager].
 
 
 ## Use-case
@@ -20,6 +20,47 @@ But this is open-source software right? What does this mean for me and the end-u
 First of all, open-source means for you, that you get access to the whole stack. There is no blackbox, all the sources are there at your fingertips. No reverse-engineering needed, no private APIs.
 
 Then again, this must not be the case for your software. The [LGPLv2.1] allows our software to be included in proprietary apps, as long as you follow the license. As a start, make sure to publish any potential changes you do to our software, make sure that the end-user is aware that VLCKit is embedded within your greater work and that s/he is aware of the gained rights. S/he is granted access to our code as well as to your additions to our work. For further details, please read the license and consult your lawyer with any questions you might have.
+
+## Installation
+
+### Swift Package Manager
+
+Add VLCKit as a dependency in your `Package.swift`:
+
+```swift
+dependencies: [
+     .package(
+        url: "https://github.com/videolan/VLCKit",
+        .exact("3.7.2")
+     )
+]
+```
+
+Then add the product to your target's `products`:
+
+```swift
+.product(name: "MobileVLCKit", package: "VLCKit"), // for iOS
+.product(name: "VLCKit", package: "VLCKit"),       // for macOS
+.product(name: "TVVLCKit", package: "VLCKit"),      // for tvOS
+```
+
+### CocoaPods
+
+Add to your `Podfile`:
+
+```ruby
+pod 'MobileVLCKit'  # for iOS
+pod 'VLCKit'        # for macOS
+pod 'TVVLCKit'      # for tvOS
+```
+
+### Carthage
+
+Add to your `Cartfile`:
+
+```
+github "videolan/VLCKit" "3.7.2"
+```
 
 ## Contribute!
 
@@ -60,6 +101,7 @@ You can find more documentation on the [VideoLAN wiki].
 
    [VideoLAN website]: <http://www.videolan.org/>
    [CocoaPods]: <http://cocoapods.org/>
+   [Swift Package Manager]: <https://swift.org/package-manager/>
    [VideoLAN wiki]: <https://wiki.videolan.org/VLCKit/>
    [LGPLv2.1]: <http://opensource.org/licenses/LGPL-2.1>
    [how to send patches]: <https://wiki.videolan.org/Sending_Patches_VLC/>

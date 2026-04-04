@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /Users/jgoh/vlckit/MobileVLCKit.xcodeproj -name *.pbxproj -exec cat {})",
+      "Bash(2)",
+      "Bash(find /Users/jgoh/vlckit/Sources -type f \\\\\\(-name *.m -o -name *.mm -o -name *.h -o -name *.c -o -name *.cpp -o -name *.hxx -o -name *.hpp \\\\\\))",
+      "Bash(find /Users/jgoh/vlckit/Sources -type f \\\\\\(-name *.h -o -name *.hpp \\\\\\))",
+      "Bash(find /Users/jgoh/vlckit/Sources -type f ! -name *.m ! -name *.c ! -name *.cpp ! -name *.h)"
+    ]
+  }
+}
