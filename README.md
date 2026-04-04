@@ -1,110 +1,226 @@
-# VLCKit
+# VLCKit Swift - SPM 지원 및 Swift Wrapper
 
-**VLCKit** is a generic multimedia library for any audio or video playback needs on macOS, iOS and tvOS.
+🌸 **FiveStar AI Company** 의 VLC Mobile Kit 입니다.
 
-It is based on **libVLC**, the engine of the popular media player *VLC*.
+## ✨ 주요 기능
 
-It supports playback, but also  active streaming and media to file conversations on the Mac.
+- ✅ **SPM (Swift Package Manager) 지원**
+- ✅ **Swift Wrapper 추가** - C API 를 Swift 에서 쉽게 사용
+- ✅ **iOS, macOS, tvOS 플랫폼 지원**
 
-It is open-source software licensed under LGPLv2.1 or later, available in source code and binary form from the [VideoLAN website].
+## 📦 설치 방법
 
-You can also integrate VLCKit and its mobile version MobileVLCKit easily via [CocoaPods] or [Swift Package Manager].
-
-
-## Use-case
-
-When do you need VLCKit? Frankly always when you need to play media not supported by QuickTime / AVFoundation or if you require more flexibility. You want to play something else besides H264/AAC files or HLS streams? You need subtitles beyond QuickTime’s basic support for Closed Captions? Your media source is not your mobile device and not a basic HTTP server either, but perhaps a live stream hailing from some weird media server or even a raw DVB signal broadcasted on a local network? Then, VLCKit is for you.
-
-But this is open-source software right? What does this mean for me and the end-user? And wasn’t MobileVLC removed from the App Store in 2011 for some crazy licensing reason?
-
-First of all, open-source means for you, that you get access to the whole stack. There is no blackbox, all the sources are there at your fingertips. No reverse-engineering needed, no private APIs.
-
-Then again, this must not be the case for your software. The [LGPLv2.1] allows our software to be included in proprietary apps, as long as you follow the license. As a start, make sure to publish any potential changes you do to our software, make sure that the end-user is aware that VLCKit is embedded within your greater work and that s/he is aware of the gained rights. S/he is granted access to our code as well as to your additions to our work. For further details, please read the license and consult your lawyer with any questions you might have.
-
-## Installation
-
-### Swift Package Manager
-
-Add VLCKit as a dependency in your `Package.swift`:
+### SPM 으로 설치
 
 ```swift
+// Package.swift
 dependencies: [
-     .package(
-        url: "https://github.com/videolan/VLCKit",
-        .exact("3.7.2")
-     )
+    .package(
+        url: "https://github.com/fivestaraicompany/vlckit_Swift",
+        from: "8.0.1"
+    )
 ]
 ```
 
-Then add the product to your target's `products`:
+### Xcode 에서 설치
+
+1. `File > Add Package Dependency`
+2. 저장소 URL 입력: `https://github.com/fivestaraicompany/vlckit_Swift`
+3. Tag `8.0.1` 선택
+4. `MobileVLCKit` 제품 선택
+
+## 🚀 사용 예시
+
+### 기본 사용법
 
 ```swift
-.product(name: "MobileVLCKit", package: "VLCKit"), // for iOS
-.product(name: "VLCKit", package: "VLCKit"),       // for macOS
-.product(name: "TVVLCKit", package: "VLCKit"),      // for tvOS
+import MobileVLCKit
+
+// MediaPlayer 생성
+let player = VLCMediaPlayer()
+let wrapper = VLCMediaPlayerWrapper(playerWithPlayer: player)
+
+// 미디어 재생
+if let url = URL(string: "https://example.com/video.mp4") {
+    let media = VLCMedia(url: url)
+    player.media = media
+    wrapper.play()
+}
+
+// 재생 제어
+wrapper.pause()
+wrapper.seekToTime(30.0) // 30 초로 시크
+wrapper.stop()
 ```
 
-### CocoaPods
+### Swift Extension 사용
 
-Add to your `Podfile`:
-
-```ruby
-pod 'MobileVLCKit'  # for iOS
-pod 'VLCKit'        # for macOS
-pod 'TVVLCKit'      # for tvOS
+```swift
+// 확장된 API 사용
+player.playStateString  // "Playing", "Paused", "Stopped"
+player.currentTime      // 현재 재생 시간
+player.duration         // 전체 길이
+player.volume           // 볼륨 (0-200)
+player.toggleMute()     // 미uting 토글
 ```
 
-### Carthage
+### Media List 사용
 
-Add to your `Cartfile`:
+```swift
+let mediaList = VLCMediaList()
+let listWrapper = VLCMediaListWrapper(mediaList: mediaList)
 
+// 미디어 추가
+if let url = URL(string: "https://example.com/video1.mp4") {
+    listWrapper.addMedia(withURL: url)
+}
+
+// 재생
+let listPlayer = VLCMediaListPlayer(mediaList: mediaList)
+listPlayer.play()
+listPlayer.next()
+listPlayer.previous()
 ```
-github "videolan/VLCKit" "3.7.2"
+
+## 📱 iOS 앱 통합
+
+### Info.plist 설정
+
+```xml
+<key>NSAppleMusicUsageDescription</key>
+<string>음악 재생을 위해 접근 권한이 필요합니다</string>
+
+<key>NSCameraUsageDescription</key>
+<string>카메라 접근이 필요합니다</string>
+
+<key>NSMicrophoneUsageDescription</key>
+<string>녹음을 위해 접근 권한이 필요합니다</string>
 ```
 
-## Contribute!
+### ViewController 예시
 
-As VLCKit is an open-source project hosted by VideoLAN, we happily welcome all kinds of contributions to it.
+```swift
+import UIKit
+import MobileVLCKit
 
-For detailed information on the development process, please read below and our wiki page on [how to send patches].
-
-### Build
-
-Make sure that both your Xcode and macOS installation is up-to-date. If needed, you will be asked to install the Xcode command line tools while the script is executed.
-
-Install python 3.7. Download and install a package from https://www.python.org - do NOT use homebrew to install python.
-
-Run `buildMobileVLCKit.sh` with the `-a ${ARCH}` option
-
-### Build with your own VLC repository
-1. Put a vlc repository inside libvlc/vlc
-     
-    `mkdir libvlc && cd libvlc && ln -s ${MYVLCGIT}`
-
-2. Apply VLC patches needed for VLCKit
-     
-    `cd vlc`
+class ViewController: UIViewController {
     
-    `git am ../../Resources/MobileVLCKit/patches/* `
+    private var mediaPlayer: VLCMediaPlayerWrapper!
+    private var mediaListPlayer: VLCMediaListPlayerWrapper!
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        // MediaPlayer 초기화
+        mediaPlayer = VLCMediaPlayerWrapper(
+            playerWithPlayer: VLCMediaPlayer()
+        )
+        
+        // Media List 생성
+        let mediaList = VLCMediaList()
+        mediaListPlayer = VLCMediaListPlayerWrapper(
+            listPlayer: VLCMediaListPlayer(mediaList: mediaList)
+        )
+        
+        // 미디어 추가
+        if let url = URL(string: "https://example.com/video.mp4") {
+            mediaListPlayer.addMedia(withURL: url)
+        }
+    }
+    
+    @IBAction func playButtonTapped(_ sender: UIButton) {
+        mediaListPlayer.play()
+    }
+    
+    @IBAction func pauseButtonTapped(_ sender: UIButton) {
+        mediaPlayer.pause()
+    }
+    
+    @IBAction func stopButtonTapped(_ sender: UIButton) {
+        mediaPlayer.stop()
+    }
+}
+```
 
-3. run `buildMobileVLCKit.sh` with the `-n` and the `-a ${ARCH}` option 
+## 🛠 빌드 방법
 
-## Get in touch!
+```bash
+# SPM 으로 빌드
+swift build
 
-We happily provide guidance on VLCKit. The [web forum] is always there for you.
+# 테스트 실행
+swift test
 
-If you prefer live interaction, reach out to us via our IRC channel on the [freenode] Network (irc.freenode.org, #videolan). Use the [Freenode Web] interface, if you don't have an IRC client at hand.
+# iOS 앱 빌드
+xcodebuild -project MobileVLCKit.xcodeproj \
+    -scheme MobileVLCKit \
+    -destination 'platform=iOS Simulator,name=iPhone 15' \
+    build
+```
 
-## Further reading
+## 📋 주요 클래스
 
-You can find more documentation on the [VideoLAN wiki].
+### VLCKitWrapper
+- 싱글톤 패턴의 메인 래퍼 클래스
+- MediaPlayer 관리
 
-   [VideoLAN website]: <http://www.videolan.org/>
-   [CocoaPods]: <http://cocoapods.org/>
-   [Swift Package Manager]: <https://swift.org/package-manager/>
-   [VideoLAN wiki]: <https://wiki.videolan.org/VLCKit/>
-   [LGPLv2.1]: <http://opensource.org/licenses/LGPL-2.1>
-   [how to send patches]: <https://wiki.videolan.org/Sending_Patches_VLC/>
-   [web forum]: <http://forum.videolan.org>
-   [freenode]: <http://www.freenode.net/>
-   [Freenode Web]: <http://webchat.freenode.net/>
+### VLCMediaPlayerWrapper
+- 재생 제어 (play, pause, stop)
+- 시크 (seek)
+- 볼륨 조절
+- 재생 상태 확인
+
+### VLCMediaWrapper
+- 미디어 생성 및 관리
+- 메타데이터 액세스
+- MIME 타입 확인
+
+### VLCMediaListWrapper
+- 미디어 리스트 관리
+- 추가/제거
+- 인덱싱
+
+### VLCMediaListPlayerWrapper
+- 리스트 플레이어 제어
+- 재생/일시정지/중지
+- 다음/이전으로 이동
+
+## 🔧 C API 래퍼
+
+Swift Extension 으로 C API 를 더 쉽게 사용:
+
+```swift
+// VLCMediaPlayer 확장
+player.playStateString  // String
+player.currentTime      // TimeInterval
+player.duration         // TimeInterval
+player.volume           // Int
+player.toggleMute()     // Void
+
+// VLCMedia 확장
+media.metadata          // [String: Any]
+media.fileSize          // Int64
+media.mimeType          // String
+media.isPlayable        // Bool
+
+// VLCMediaList 확장
+list.count              // Int
+list.media(at: index)   // VLCMedia?
+list.allURLs            // [URL]
+list.addMedia(withURL: url)
+list.removeMedia(at: index)
+```
+
+## 📝 License
+
+FiveStar AI Company 의 VLCKit 는 VLC 의 라이선스를 따릅니다.
+
+## 📞 문의
+
+FiveStar AI Company 홍보팀
+- 개발 담당: Jasmine (자스민)
+- 대표: Anton
+
+---
+
+🌸 **FiveStar AI Company** - Innovation & Excellence
