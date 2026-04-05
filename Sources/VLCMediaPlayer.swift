@@ -1015,7 +1015,7 @@ public class VLCMediaPlayer: NSObject {
 
         let userData = Unmanaged.passRetained(_eventsHandler!).toOpaque()
 
-        _libVLCBackgroundQueue?.sync {
+        _libVLCBackgroundQueue?.async {
             libvlc_event_attach(eventsManager, libvlc_MediaPlayerPlaying, HandleMediaInstanceStateChanged, userData)
             libvlc_event_attach(eventsManager, libvlc_MediaPlayerPaused, HandleMediaInstanceStateChanged, userData)
             libvlc_event_attach(eventsManager, libvlc_MediaPlayerEncounteredError, HandleMediaInstanceStateChanged, userData)
@@ -1047,7 +1047,7 @@ public class VLCMediaPlayer: NSObject {
 
         let userData = _eventsHandler.map { Unmanaged.passRetained($0).toOpaque() }
 
-        _libVLCBackgroundQueue?.sync {
+        _libVLCBackgroundQueue?.async {
             libvlc_event_detach(eventsManager, libvlc_MediaPlayerPlaying, HandleMediaInstanceStateChanged, userData)
             libvlc_event_detach(eventsManager, libvlc_MediaPlayerPaused, HandleMediaInstanceStateChanged, userData)
             libvlc_event_detach(eventsManager, libvlc_MediaPlayerEncounteredError, HandleMediaInstanceStateChanged, userData)

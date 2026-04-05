@@ -32,8 +32,8 @@ public class VLCMediaThumbnailer: NSObject {
 
     private var _library: VLCLibrary?
     private var _playerInstance: OpaquePointer? = nil
-    private var _parsingTimeoutTimer: Timer? = nil
-    private var _thumbnailingTimeoutTimer: Timer? = nil
+    private var _parsingTimeoutSource: DispatchSourceTimer? = nil
+    private var _thumbnailingTimeoutSource: DispatchSourceTimer? = nil
     private var _numberOfReceivedFrames: Int = 0
     private var _effectiveThumbnailHeight: CGFloat = 0
     private var _effectiveThumbnailWidth: CGFloat = 0
@@ -60,13 +60,13 @@ public class VLCMediaThumbnailer: NSObject {
      }
 
     deinit {
-        NSAssert(_thumbnailingTimeoutTimer == nil, "Timer not released")
-        NSAssert(_parsingTimeoutTimer == nil, "Timer not released")
+        NSAssert(_thumbnailingTimeoutSource == nil, "Timer not released")
+        NSAssert(_parsingTimeoutSource == nil, "Timer not released")
         NSAssert(dataPointer == nil, "Data not released")
         NSAssert(_playerInstance == nil, "Not properly retained")
 
         thumbnail = nil
-    }
+     }
 
     public var library: VLCLibrary? {
         get { return _library }
@@ -80,9 +80,12 @@ public class VLCMediaThumbnailer: NSObject {
         if parsedStatus != .failed && parsedStatus != .done {
             media?.addObserver(self, forKeyPath: "parseStatus", options: [], context: nil)
             media?.parse(options: [.local, .network])
-            _parsingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in
-                self?.mediaParsingTimedOut()
-             }
+            _parsingTimeoutSource = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+        _parsingTimeoutSource?.schedule(deadline: .now() + 10)
+        _parsingTimeoutSource?.setEventHandler { [weak self] in
+            self?.mediaParsingTimedOut()
+          }
+        _parsingTimeoutSource?.resume()
             return
          }
 
@@ -176,9 +179,12 @@ public class VLCMediaThumbnailer: NSObject {
             timeoutDuration = 45
          }
 
-        _thumbnailingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: timeoutDuration, repeats: false) { [weak self] _ in
+        _thumbnailingTimeoutSource = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+         _thumbnailingTimeoutSource?.schedule(deadline: .now() + timeoutDuration)
+         _thumbnailingTimeoutSource?.setEventHandler { [weak self] in
             self?.mediaThumbnailingTimedOut()
-         }
+           }
+         _thumbnailingTimeoutSource?.resume()
      }
 
     private func mediaParsingTimedOut() {
@@ -191,8 +197,8 @@ public class VLCMediaThumbnailer: NSObject {
 
     public override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         if object == media, keyPath == "parseStatus" {
-            _parsingTimeoutTimer?.invalidate()
-            _parsingTimeoutTimer = nil
+            _parsingTimeoutSource?.cancel()
+             _parsingTimeoutSource = nil
             media?.removeObserver(self, forKeyPath: "parseStatus")
             startFetchingThumbnail()
             return
@@ -208,24 +214,14 @@ public class VLCMediaThumbnailer: NSObject {
         let position = libvlc_media_player_get_position(_playerInstance)
         let length = libvlc_media_player_get_length(_playerInstance)
 
-        if position < self.snapshotPosition && _numberOfReceivedFrames < 2 {
+        if position < self.snapshotPosition && _numberOfReceivedFrames < 1 {
             libvlc_media_player_set_position(_playerInstance, self.snapshotPosition)
             return
-         }
+          }
 
-        if (length < kStandardStartTime * 2 && _numberOfReceivedFrames < 5) && self.snapshotPosition == kSnapshotPosition {
-            libvlc_media_player_set_position(_playerInstance, kSnapshotPosition)
+        if _numberOfReceivedFrames < 1 {
             return
-         }
-
-        if (position <= 0.05 && _numberOfReceivedFrames < 8) && length > 1000 {
-            libvlc_media_player_set_position(_playerInstance, kSnapshotPosition)
-            return
-         }
-
-        if _numberOfReceivedFrames < 4 {
-            return
-         }
+           }
 
         NSAssert(dataPointer != nil, "We have no data")
 
@@ -274,12 +270,12 @@ public class VLCMediaThumbnailer: NSObject {
     private func endThumbnailing() {
         shouldRejectFrames = true
 
-        _thumbnailingTimeoutTimer?.invalidate()
-        _thumbnailingTimeoutTimer = nil
+        _thumbnailingTimeoutSource?.cancel()
+          _thumbnailingTimeoutSource = nil
 
-        DispatchQueue.global().async { [weak self] in
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.stopAsync()
-         }
+           }
      }
 
     private func notifyDelegate() {

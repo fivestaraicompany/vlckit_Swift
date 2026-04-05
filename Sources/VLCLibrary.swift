@@ -56,7 +56,7 @@ public class VLCLibrary: NSObject {
             guard let instance = instance else { return }
 
             libvlc_log_unset(instance)
-            DispatchQueue.global(qos: .userInitiated).sync {
+            DispatchQueue.global(qos: .userInitiated).async {
                 self.loggers?.enumerated().forEach { (idx, logger) in
                     if logger.level >= 0 {
                         libvlc_log_set(instance, VLCLibrary.logHandler, UnsafeMutableRawPointer(Unmanaged.passRetained(self).toOpaque()))
@@ -230,7 +230,7 @@ public class VLCLibrary: NSObject {
 
         let context: VLCLogContext = VLCLogContext(log: ctx)
 
-        DispatchQueue.global(qos: .userInitiated).sync {
+        DispatchQueue.global(qos: .userInitiated).async {
             library.loggers?.forEach { logger in
                 if logLevel.rawValue >= logger.level {
                     logger.handleMessage(message, debugLevel: logLevel.rawValue)

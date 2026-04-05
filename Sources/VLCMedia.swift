@@ -80,7 +80,7 @@ public enum VLCMediaParsingOptions: Int {
  Media parsing status
  */
 public enum VLCMediaParsedStatus: Int {
-    case init = 0
+    case initial = 0
     case skipped
     case failed
     case timeout
@@ -382,368 +382,49 @@ public class VLCMedia: NSObject {
          }
 
         return length ?? VLCTime.nullTime()
-       }
-
-      /// Check if media is suitable for device
-      @available(*, deprecated, message: "This method is deprecated")
-    public var mediaSizeSuitableForDevice: Bool {
-     #if TARGET_OS_IPHONE
-        var parsedStatus = parseStatus
-        if parsedStatus == .skipped || parsedStatus == .init {
-            parse(options: [.local, .network])
-            sleep(2)
-         }
-
-        var biggestWidth: UInt = 0
-        var biggestHeight: UInt = 0
-
-        var tracksInfo: UnsafeMutablePointer<OpaquePointer?>?
-        let count = libvlc_media_tracks_get(_media, &tracksInfo)
-
-        for i in 0..<count {
-            let track = tracksInfo![i].pointee
-            guard let track = track else { continue }
-
-            if track.pointee.i_type == libvlc_track_video {
-                let video = track.pointee.u.pointee.video
-                if video.i_width > biggestWidth { biggestWidth = video.i_width }
-                if video.i_height > biggestHeight { biggestHeight = video.i_height }
-              }
-          }
-
-        if biggestHeight > 0 && biggestWidth > 0 {
-            let totalPixels = biggestWidth * biggestHeight
-
-            var size = size_t(0)
-            sysctlbyname("hw.machine", nil, &size, nil, 0)
-
-            var answer = [CChar](repeating: 0, count: Int(size))
-            sysctlbyname("hw.machine", &answer, &size, nil, 0)
-
-            let currentMachine = String(cString: answer)
-            answer.withUnsafeMutableBufferPointer { $0.deallocate() }
-
-            if currentMachine.hasPrefix("iPhone2") || currentMachine.hasPrefix("iPhone3") ||
-               currentMachine.hasPrefix("iPad1") || currentMachine.hasPrefix("iPod3") ||
-               currentMachine.hasPrefix("iPod4") {
-                return totalPixels < 600000
-              } else if currentMachine.hasPrefix("iPhone4") || currentMachine.hasPrefix("iPad3,1") ||
-                       currentMachine.hasPrefix("iPad3,2") || currentMachine.hasPrefix("iPad3,3") ||
-                       currentMachine.hasPrefix("iPod4") || currentMachine.hasPrefix("iPad2") ||
-                       currentMachine.hasPrefix("iPod5") {
-                return totalPixels < 922000
-              } else {
-                return totalPixels < 2074000
              }
-          }
-        return true
-     #else
-        return true
-     #endif
-       }
 
-      /// Compare media
-    public func compare(_ media: VLCMedia?) -> ComparisonResult {
-        guard let media = media else { return .orderedDescending }
-        if self === media { return .orderedSame }
-        return _media == media._media ? .orderedSame : .orderedAscending
-       }
-
-      /// Equal
-    public override func isEqual(_ object: Any?) -> Bool {
-        guard let other = object as? VLCMedia else { return false }
-        return _media == other._media
-       }
-
-      /// Hash
-    public override var hash: Int {
-        return _media?.hashValue ?? 0
-       }
-
-      /// Description
-    public override var description: String {
-        let urlStr = url?.absoluteString.removingPercentEncoding ?? "nil"
-        return "<\(type(of: self)) \(self), md: \(_media ?? UnsafeMutableRawPointer(bitPattern: 0xDEADBEEF)), url: \(urlStr)>"
-       }
-
-      /// Deinit
-    deinit {
-        if let media = _media {
-            libvlc_media_release(media)
-          }
-       }
-
-      // MARK: - Static Methods
-
-      /// Create media from URL
-    public static func media(withURL url: URL) -> VLCMedia {
-        return VLCMedia(url: url)
-       }
-
-      /// Create media from path
-    public static func media(withPath path: String) -> VLCMedia {
-        return VLCMedia(path: path)
-       }
-
-      /// Create media as node
-    public static func media(asNodeWithName name: String) -> VLCMedia {
-        return VLCMedia(nodeWithName: name)
-       }
-
-      /// Get codec name for FourCC
-    public static func codecName(forFourCC fourcc: UInt32, trackType: String) -> String {
-        var trackTypeValue: libvlc_track_type_t = libvlc_track_unknown
-
-        if trackType == "audio" {
-            trackTypeValue = libvlc_track_audio
-          } else if trackType == "video" {
-            trackTypeValue = libvlc_track_video
-          } else if trackType == "text" {
-            trackTypeValue = libvlc_track_text
-          }
-
-        let ret = libvlc_media_get_codec_description(trackTypeValue, fourcc)
-        guard let ret = ret else { return "" }
-        let result = String(cString: ret)
-        free(ret)
-        return result
-       }
-
-      /// Track information
-    public var tracksInformation: [[String: Any]] {
-        var tracksInfo: UnsafeMutablePointer<OpaquePointer?>?
-        let count = libvlc_media_tracks_get(_media, &tracksInfo)
-
-        var array: [[String: Any]] = []
-
-        for i in 0..<count {
-            let track = tracksInfo![i].pointee
-            guard let track = track else { continue }
-
-            var dict: [String: Any] = [
-                 "codec": NSNumber(value: track.pointee.i_codec),
-                 "id": NSNumber(value: track.pointee.i_id),
-                 "profile": NSNumber(value: track.pointee.i_profile),
-                 "level": NSNumber(value: track.pointee.i_level),
-                 "bitrate": NSNumber(value: track.pointee.i_bitrate)
-             ]
-
-            if let language = track.pointee.psz_language {
-                dict["language"] = String(cString: language)
-              }
-
-            if let description = track.pointee.psz_description {
-                dict["description"] = String(cString: description)
-              }
-
-            var type: String
-            switch track.pointee.i_type {
-            case libvlc_track_audio:
-                type = "audio"
-                dict["channelsNumber"] = NSNumber(value: track.pointee.u.audio.i_channels)
-                dict["rate"] = NSNumber(value: track.pointee.u.audio.i_rate)
-            case libvlc_track_video:
-                type = "video"
-                let video = track.pointee.u.video
-                dict["height"] = NSNumber(value: video.i_height)
-                dict["width"] = NSNumber(value: video.i_width)
-                dict["orientation"] = NSNumber(value: video.i_orientation)
-                dict["projection"] = NSNumber(value: video.i_projection)
-                dict["sar_num"] = NSNumber(value: video.i_sar_num)
-                dict["sar_den"] = NSNumber(value: video.i_sar_den)
-                dict["frame_rate_num"] = NSNumber(value: video.i_frame_rate_num)
-                dict["frame_rate_den"] = NSNumber(value: video.i_frame_rate_den)
-            case libvlc_track_text:
-                type = "text"
-                if let encoding = track.pointee.u.subtitle.psz_encoding {
-                    dict["encoding"] = String(cString: encoding)
-                  }
-            default:
-                type = "unknown"
-              }
-
-            dict["type"] = type
-            array.append(dict)
-          }
-
-        libvlc_media_tracks_release(tracksInfo, count)
-        return array
-       }
-
-      // MARK: - Private Callbacks
-
-    private static let openCallback: libvlc_media_open_cb = { opaque, datap, sizep in
-        guard let opaque = opaque else { return -1 }
-
-        let stream = Unmanaged<InputStream>.fromOpaque(opaque).takeUnretainedValue()
-
-        datap?.pointee = opaque
-        sizep?.pointee = UInt64.max
-
-        if stream.streamStatus == .notOpen {
-            stream.open()
-          }
-
-        return stream.streamStatus == .open ? 0 : -1
-       }
-
-    private static let readCallback: libvlc_media_read_cb = { opaque, buf, len in
-        guard let opaque = opaque, let buf = buf else { return -1 }
-
-        let stream = Unmanaged<InputStream>.fromOpaque(opaque).takeUnretainedValue()
-        return stream.read(buf, maxLength: len)
-       }
-
-    private static let seekCallback: libvlc_media_seek_cb = { opaque, offset in
-        guard let opaque = opaque else { return -1 }
-
-        let stream = Unmanaged<InputStream>.fromOpaque(opaque).takeUnretainedValue()
-        return stream.setProperty(offset, forKey: .fileCurrentOffset) ? 0 : -1
-       }
-
-    private static let closeCallback: libvlc_media_close_cb = { opaque in
-        guard let opaque = opaque else { return }
-
-        let stream = Unmanaged<InputStream>.fromOpaque(opaque).takeRetainedValue()
-        if stream.streamStatus != .closed && stream.streamStatus != .notOpen {
-            stream.close()
-         }
-       }
-
-      // MARK: - Event Callbacks
-
-    private static func mediaMetaChangedCallback(data: UnsafeMutableRawPointer?, event: UnsafePointer<libvlc_event_t>) {
-        guard let data = data, let event = event else { return }
-
-        let media = Unmanaged<VLCMedia>.fromOpaque(data).takeUnretainedValue()
-        let metaType = NSNumber(value: event.pointee.u.media_meta_changed.meta_type)
-
-        media.metaData.handleMediaMetaChanged(metaType: metaType.intValue)
-        media.delegate?.mediaMetaDataDidChange(media)
-       }
-
-    private static func mediaDurationChangedCallback(data: UnsafeMutableRawPointer?, event: UnsafePointer<libvlc_event_t>) {
-        guard let data = data, let event = event else { return }
-
-        let media = Unmanaged<VLCMedia>.fromOpaque(data).takeUnretainedValue()
-        let duration = VLCTime(timeWithNumber: NSNumber(value: event.pointee.u.media_duration_changed.new_duration))
-
-        media.length = duration
-       }
-
-    private static func mediaStateChangedCallback(data: UnsafeMutableRawPointer?, event: UnsafePointer<libvlc_event_t>) {
-        guard let data = data, let event = event else { return }
-
-        let media = Unmanaged<VLCMedia>.fromOpaque(data).takeUnretainedValue()
-        let state = VLCMediaState(rawValue: event.pointee.u.media_state_changed.new_state) ?? .nothingSpecial
-
-        media.state = state
-       }
-
-    private static func mediaSubItemAddedCallback(data: UnsafeMutableRawPointer?, event: UnsafePointer<libvlc_event_t>) {
-        guard let data = data, let event = event else { return }
-
-        let media = Unmanaged<VLCMedia>.fromOpaque(data).takeUnretainedValue()
-
-        let mlist = libvlc_media_subitems(media._media)
-        if let mlist = mlist {
-            media.subitems = VLCMediaList(mediaList: mlist)
-            libvlc_media_list_release(mlist)
-          }
-       }
-
-    private static func mediaParsedChangedCallback(data: UnsafeMutableRawPointer?, event: UnsafePointer<libvlc_event_t>) {
-        guard let data = data else { return }
-
-        let media = Unmanaged<VLCMedia>.fromOpaque(data).takeUnretainedValue()
-        media.delegate?.mediaDidFinishParsing(media)
-       }
-
-      /// Legacy bridge methods
-    public static func media(withMedia media: VLCMedia, andLibVLCOptions options: [String: String]) -> VLCMedia {
-        let p_md = libvlc_media_duplicate(media._media)
-
-        options.forEach { key, value in
-            let option = value.isEmpty ? key : "\(key)=\(value)"
-            libvlc_media_add_option(p_md, option)
-         }
-
-        return VLCMedia()
-       }
-
-    private func setLength(_ value: VLCTime?) {
-        self.length = value
-       }
-}
-
-// MARK: - Deprecated Extensions
-extension VLCMedia {
-      /// Stats
-      @available(*, deprecated, message: "Use statistics instead")
-    public var stats: [String: Any]? {
-        let stats = self.statistics
-        return [
-             "demuxBitrate": stats.demuxBitrate,
-             "inputBitrate": stats.inputBitrate,
-             "sendBitrate": stats.sendBitrate,
-             "decodedAudio": stats.decodedAudio,
-             "decodedVideo": stats.decodedVideo,
-             "demuxCorrupted": stats.demuxCorrupted,
-             "demuxDiscontinuity": stats.demuxDiscontinuity,
-             "demuxReadBytes": stats.demuxReadBytes,
-             "displayedPictures": stats.displayedPictures,
-             "lostAbuffers": stats.lostAudioBuffers,
-             "lostPictures": stats.lostPictures,
-             "playedAbuffers": stats.playedAudioBuffers,
-             "readBytes": stats.readBytes,
-             "sentBytes": stats.sentBytes,
-             "sentPackets": stats.sentPackets
-         ]
-       }
-
-      /// Deprecated stats properties
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfReadBytesOnInput: Int32 { return statistics.readBytes }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var inputBitrate: Float32 { return statistics.inputBitrate }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfReadBytesOnDemux: Int32 { return statistics.demuxReadBytes }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var demuxBitrate: Float32 { return statistics.demuxBitrate }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfDecodedVideoBlocks: Int32 { return statistics.decodedVideo }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfDecodedAudioBlocks: Int32 { return statistics.decodedAudio }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfDisplayedPictures: Int32 { return statistics.displayedPictures }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfLostPictures: Int32 { return statistics.lostPictures }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfPlayedAudioBuffers: Int32 { return statistics.playedAudioBuffers }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfLostAudioBuffers: Int32 { return statistics.lostAudioBuffers }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfSentPackets: Int32 { return statistics.sentPackets }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfSentBytes: Int32 { return statistics.sentBytes }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var streamOutputBitrate: Float32 { return statistics.sendBitrate }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfCorruptedDataPackets: Int32 { return statistics.demuxCorrupted }
-
-      @available(*, deprecated, message: "Use statistics instead")
-    public var numberOfDiscontinuties: Int32 { return statistics.demuxDiscontinuity }
-}
+            /// Get media length asynchronously via completion handler
+            /// - Parameter completion: Completion handler with VLCTime? result
+        public func length(completion: @escaping (VLCTime?) -> Void) {
+            guard _media != nil else {
+                completion(VLCTime.nullTime())
+                return
+            }
+
+            if let existingLength = length {
+                completion(existingLength)
+                return
+            }
+
+            parse()
+
+            let parseQueue = DispatchQueue(label: "org.videolan.media.lengthQueue", qos: .userInitiated)
+            let group = DispatchGroup()
+            group.enter()
+
+            let deadline = DispatchTime.now() + 30
+            let timer = DispatchSource.makeTimerSource(queue: parseQueue)
+            timer.schedule(deadline: deadline)
+            timer.setEventHandler { [weak self] in
+                group.leave()
+            }
+            timer.resume()
+
+            /// Poll parse status with timeout
+            let checkTimer = DispatchSource.makeTimerSource(queue: parseQueue)
+            checkTimer.schedule(deadline: .now() + 0.01)
+            checkTimer.setEventHandler { [weak self] in
+                guard let self = self else { return }
+                if self.length != nil || self.parseStatus == .failed || self.parseStatus == .done {
+                    checkTimer.cancel()
+                    group.leave()
+                }
+            }
+            checkTimer.resume()
+
+            group.notify(queue: .main) { [weak self] in
+                completion(self?.length ?? VLCTime.nullTime())
+            }
+        }
+        }

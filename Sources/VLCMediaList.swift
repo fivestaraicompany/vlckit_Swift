@@ -99,7 +99,7 @@ public class VLCMediaList: NSObject {
     }
 
     public func insertMedia(_ media: VLCMedia, atIndex index: Int) {
-        _serialMediaObjectsQueue?.sync {
+        _serialMediaObjectsQueue?.async {
             _mediaObjects.insert(media, at: index)
         }
 
@@ -111,7 +111,7 @@ public class VLCMediaList: NSObject {
     public func removeMedia(atIndex index: Int) -> Bool {
         var ok = true
 
-        _serialMediaObjectsQueue?.sync {
+        _serialMediaObjectsQueue?.async {
             if index >= _mediaObjects.count {
                 ok = false
                 return
@@ -128,7 +128,7 @@ public class VLCMediaList: NSObject {
 
     public func media(atIndex index: Int) -> VLCMedia? {
         var media: VLCMedia?
-        _serialMediaObjectsQueue?.sync {
+        _serialMediaObjectsQueue?.async {
             media = index < _mediaObjects.count ? _mediaObjects[index] : nil
         }
         return media
@@ -140,7 +140,7 @@ public class VLCMediaList: NSObject {
 
     public var count: Int {
         var count = 0
-        _serialMediaObjectsQueue?.sync {
+        _serialMediaObjectsQueue?.async {
             count = _mediaObjects.count
         }
         return count
@@ -160,7 +160,7 @@ public class VLCMediaList: NSObject {
         _eventsHandler = VLCEventsHandler(object: self, configuration: VLCLibrary.sharedEventsConfiguration)
         let userData = Unmanaged.passRetained(_eventsHandler!).toOpaque()
 
-        _serialMediaObjectsQueue?.sync {
+        _serialMediaObjectsQueue?.async {
             libvlc_event_attach(eventsManager, libvlc_MediaListItemAdded, HandleMediaListItemAdded, userData)
             libvlc_event_attach(eventsManager, libvlc_MediaListItemDeleted, HandleMediaListItemDeleted, userData)
         }
@@ -177,7 +177,7 @@ private func HandleMediaListItemAdded(_ event: libvlc_event_t, opaque: UnsafeMut
 
     let index = Int(event.u.media_list_item_added.index)
 
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
+    guard let eventsHandler = opaque.map({ Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() }) else { return }
 
     eventsHandler.handleEvent { object in
         let mediaList = object as! VLCMediaList
@@ -197,7 +197,7 @@ private func HandleMediaListItemDeleted(_ event: libvlc_event_t, opaque: UnsafeM
 
     let index = Int(event.u.media_list_item_deleted.index)
 
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
+    guard let eventsHandler = opaque.map({ Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() }) else { return }
 
     eventsHandler.handleEvent { object in
         let mediaList = object as! VLCMediaList
