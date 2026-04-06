@@ -5,7 +5,11 @@
       "Bash(2)",
       "Bash(find /Users/jgoh/vlckit/Sources -type f \\\\\\(-name *.m -o -name *.mm -o -name *.h -o -name *.c -o -name *.cpp -o -name *.hxx -o -name *.hpp \\\\\\))",
       "Bash(find /Users/jgoh/vlckit/Sources -type f \\\\\\(-name *.h -o -name *.hpp \\\\\\))",
-      "Bash(find /Users/jgoh/vlckit/Sources -type f ! -name *.m ! -name *.c ! -name *.cpp ! -name *.h)"
+      "Bash(find /Users/jgoh/vlckit/Sources -type f ! -name *.m ! -name *.c ! -name *.cpp ! -name *.h)",
+      "Bash(git -C /Users/jgoh/vlckit_Swift tag)",
+      "Bash(ls /Users/jgoh/vlckit_Swift/Sources/*.swift)",
+      "Bash(ls /Users/jgoh/vlckit_Swift/Sources/*.m)",
+      "Bash(find /Users/jgoh -maxdepth 3 -name *.xcodeproj)"
     ]
   }
 }

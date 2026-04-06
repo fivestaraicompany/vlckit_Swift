@@ -15,29 +15,10 @@ let package = Package(
         )
     ],
     targets: [
-        .target(
+        .binaryTarget(
             name: "MobileVLCKit",
-            path: "Sources",
-            exclude: [
-                // 불필요/충돌 가능 파일 제거
-                "VLCMediaLibrary.m",
-                "VLCMediaLibrary.swift",
-                "VLCStaticLibVLC.m",
-                "VLCStaticLibVVC.swift",
-                "StaticLibVLC.m",
-                "StaticLibVVC.swift",
-                "VLCiOSLegacyDialogProvider.m",
-                "VLCiOSLegacyDialogProvider.swift",
-                "VLCEmbeddedDialogProvider.m",
-                "VLCEmbeddedDialogProvider.swift",
-                // macOS / tvOS 관련도 일단 제외
-            ],
-            publicHeadersPath: "Headers/Public",
-            cSettings: [
-                .headerSearchPath("Headers/Public")
-            ]
+            url: "https://github.com/fivestaraicompany/vlckit_Swift/releases/download/3.7.6/MobileVLCKit-3.7.6.xcframework.zip",
+            checksum: "16bd3bdbf73589ef50391b034eff6c3496ad7f99f6832009857d0ee86733a46b"
         )
-    ],
-    cLanguageStandard: .c99,
-    cxxLanguageStandard: .cxx14
+    ]
 )
