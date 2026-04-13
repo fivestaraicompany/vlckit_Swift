@@ -29,19 +29,19 @@ Add VLCKit as a dependency in your `Package.swift`:
 
 ```swift
 dependencies: [
-     .package(
-        url: "https://github.com/videolan/VLCKit",
-        .exact("3.7.2")
-     )
+    .package(
+        url: "https://github.com/jgoh/vlckit_swift",
+        .exact("3.7.9")
+    )
 ]
 ```
 
 Then add the product to your target's `products`:
 
 ```swift
-.product(name: "MobileVLCKit", package: "VLCKit"), // for iOS
-.product(name: "VLCKit", package: "VLCKit"),       // for macOS
-.product(name: "TVVLCKit", package: "VLCKit"),      // for tvOS
+.product(name: "MobileVLCKit", package: "vlckit_swift"), // for iOS
+.product(name: "VLCKit", package: "vlckit_swift"),       // for macOS
+.product(name: "TVVLCKit", package: "vlckit_swift"),      // for tvOS
 ```
 
 ### CocoaPods

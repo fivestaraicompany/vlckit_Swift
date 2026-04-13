@@ -427,4 +427,3 @@ public class VLCMedia: NSObject {
                 completion(self?.length ?? VLCTime.nullTime())
             }
         }
-        }
