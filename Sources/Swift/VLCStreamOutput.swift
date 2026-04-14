@@ -14,32 +14,23 @@ public class VLCStreamOutput: NSObject {
 
     private var _options: [String: Any]?
 
-     /**
-     Create a new stream output
-      */
     public override init() {
         super.init()
-          _options = nil
-      }
+        _options = nil
+    }
 
-     /**
-     Create a new stream output with options
-
-       - Parameter dictionary: The options dictionary
-       - Returns: A new stream output instance
-       */
-    public convenience init?(optionDictionary dictionary: [String: Any]?) {
-        self.init()
-          _options = dictionary?.mutableCopy() as? [String: Any]
-      }
+    public init(optionDictionary dictionary: [String: Any]?) {
+        super.init()
+        _options = dictionary
+    }
 
     public override var description: String {
         return representedLibVLCOptions()
-      }
+    }
 
     public static func streamOutput(withOptionDictionary dictionary: [String: Any]?) -> VLCStreamOutput {
-        return VLCStreamOutput(optionDictionary: dictionary) ?? VLCStreamOutput()
-      }
+        return VLCStreamOutput(optionDictionary: dictionary)
+    }
 
     public static func rtpBroadcastStreamOutput(withSAPAnnounce announceName: String) -> VLCStreamOutput {
         return streamOutput(withOptionDictionary: [
@@ -52,11 +43,11 @@ public class VLCStreamOutput: NSObject {
                 "destination": "239.255.1.1"
             ]
         ])
-      }
+    }
 
     public static func rtpBroadcastStreamOutput() -> VLCStreamOutput {
         return rtpBroadcastStreamOutput(withSAPAnnounce: "Helloworld!")
-      }
+    }
 
     public static func ipodStreamOutput(withFilePath filePath: String) -> VLCStreamOutput {
         return streamOutput(withOptionDictionary: [
@@ -76,7 +67,7 @@ public class VLCStreamOutput: NSObject {
                 "destination": filePath
             ]
         ])
-      }
+    }
 
     public static func mpeg4StreamOutput(withFilePath filePath: String) -> VLCStreamOutput {
         return streamOutput(withOptionDictionary: [
@@ -92,7 +83,7 @@ public class VLCStreamOutput: NSObject {
                 "destination": filePath
             ]
         ])
-      }
+    }
 
     public static func streamOutput(withFilePath filePath: String) -> VLCStreamOutput {
         return streamOutput(withOptionDictionary: [
@@ -102,7 +93,7 @@ public class VLCStreamOutput: NSObject {
                 "destination": filePath
             ]
         ])
-      }
+    }
 
     public static func mpeg2StreamOutput(withFilePath filePath: String) -> VLCStreamOutput {
         return streamOutput(withOptionDictionary: [
@@ -119,135 +110,99 @@ public class VLCStreamOutput: NSObject {
                 "destination": filePath
             ]
         ])
-      }
+    }
 
     public func representedLibVLCOptions() -> String {
-        var representedOptions = ""
         var subOptions: [String] = []
         var optionsAsArray: [String] = []
+        let hasTranscoding = _options?["transcodingOptions"] != nil
 
         if let transcodingOptions = _options?["transcodingOptions"] as? [String: String] {
-            let videoCodec = transcodingOptions["videoCodec"]
-            let audioCodec = transcodingOptions["audioCodec"]
-            let subtitleCodec = transcodingOptions["subtitleCodec"]
-            let videoBitrate = transcodingOptions["videoBitrate"]
-            let audioBitrate = transcodingOptions["audioBitrate"]
-            let channels = transcodingOptions["channels"]
-            let height = transcodingOptions["height"]
-            let canvasHeight = transcodingOptions["canvasHeight"]
-            let width = transcodingOptions["width"]
-            let audioSync = transcodingOptions["audioSync"]
-            let videoEncoder = transcodingOptions["videoEncoder"]
-            let subtitleEncoder = transcodingOptions["subtitleEncoder"]
-            let subtitleOverlay = transcodingOptions["subtitleOverlay"]
-
-            if let videoEncoder = videoEncoder {
+            if let videoEncoder = transcodingOptions["videoEncoder"] {
                 subOptions.append("venc=\(videoEncoder)")
-              }
-            if let videoCodec = videoCodec {
+            }
+            if let videoCodec = transcodingOptions["videoCodec"] {
                 subOptions.append("vcodec=\(videoCodec)")
-              }
-            if let videoBitrate = videoBitrate {
+            }
+            if let videoBitrate = transcodingOptions["videoBitrate"] {
                 subOptions.append("vb=\(videoBitrate)")
-              }
-            if let width = width {
+            }
+            if let width = transcodingOptions["width"] {
                 subOptions.append("width=\(width)")
-              }
-            if let height = height {
+            }
+            if let height = transcodingOptions["height"] {
                 subOptions.append("height=\(height)")
-              }
-            if let canvasHeight = canvasHeight {
+            }
+            if let canvasHeight = transcodingOptions["canvasHeight"] {
                 subOptions.append("canvas-height=\(canvasHeight)")
-              }
-            if let audioCodec = audioCodec {
+            }
+            if let audioCodec = transcodingOptions["audioCodec"] {
                 subOptions.append("acodec=\(audioCodec)")
-              }
-            if let audioBitrate = audioBitrate {
+            }
+            if let audioBitrate = transcodingOptions["audioBitrate"] {
                 subOptions.append("ab=\(audioBitrate)")
-              }
-            if let channels = channels {
+            }
+            if let channels = transcodingOptions["channels"] {
                 subOptions.append("channels=\(channels)")
-              }
-            if audioSync != nil {
+            }
+            if transcodingOptions["audioSync"] != nil {
                 subOptions.append("audioSync")
-              }
-            if let subtitleCodec = subtitleCodec {
+            }
+            if let subtitleCodec = transcodingOptions["subtitleCodec"] {
                 subOptions.append("scodec=\(subtitleCodec)")
-              }
-            if let subtitleEncoder = subtitleEncoder {
+            }
+            if let subtitleEncoder = transcodingOptions["subtitleEncoder"] {
                 subOptions.append("senc=\(subtitleEncoder)")
-              }
-            if subtitleOverlay != nil {
+            }
+            if transcodingOptions["subtitleOverlay"] != nil {
                 subOptions.append("soverlay")
-              }
+            }
 
             optionsAsArray.append("#transcode{\(subOptions.joined(separator: ","))}")
             subOptions.removeAll()
-          }
+        }
 
         if let outputOptions = _options?["outputOptions"] as? [String: String] {
-            let muxer = outputOptions["muxer"]
-            let destination = outputOptions["destination"]
-            let url = outputOptions["url"]
-            let access = outputOptions["access"]
-
-            if let muxer = muxer {
+            if let muxer = outputOptions["muxer"] {
                 subOptions.append("mux=\(muxer)")
-              }
-            if let destination = destination {
+            }
+            if let destination = outputOptions["destination"] {
                 subOptions.append("dst=\"\(destination.replacingOccurrences(of: "\"", with: "\\\""))\"")
-              }
-            if let url = url {
+            }
+            if let url = outputOptions["url"] {
                 subOptions.append("url=\"\(url.replacingOccurrences(of: "\"", with: "\\\""))\"")
-              }
-            if let access = access {
+            }
+            if let access = outputOptions["access"] {
                 subOptions.append("access=\(access)")
-              }
+            }
 
             let std = "#std{\(subOptions.joined(separator: ","))}"
-
-            if transcodingOptions == nil {
-                representedOptions = std
-              }
-
             optionsAsArray.append(std)
             subOptions.removeAll()
-          }
+        }
 
         if let rtpOptions = _options?["rtpOptions"] as? [String: String] {
-            let muxer = rtpOptions["muxer"]
-            let destination = rtpOptions["destination"]
-            let sdp = rtpOptions["sdp"]
-            let name = rtpOptions["name"]
-            let sap = rtpOptions["sap"]
-
-            if let muxer = muxer {
+            if let muxer = rtpOptions["muxer"] {
                 subOptions.append("muxer=\(muxer)")
-              }
-            if let destination = destination {
+            }
+            if let destination = rtpOptions["destination"] {
                 subOptions.append("dst=\(destination)")
-              }
-            if let sdp = sdp {
+            }
+            if let sdp = rtpOptions["sdp"] {
                 subOptions.append("sdp=\(sdp)")
-              }
-            if let sap = sap {
+            }
+            if rtpOptions["sap"] != nil {
                 subOptions.append("sap")
-              }
-            if let name = name {
+            }
+            if let name = rtpOptions["name"] {
                 subOptions.append("name=\"\(name)\"")
-              }
+            }
 
             let rtp = "#rtp{\(subOptions.joined(separator: ","))}"
-
-            if transcodingOptions == nil {
-                representedOptions = rtp
-              }
-
             optionsAsArray.append(rtp)
             subOptions.removeAll()
-          }
+        }
 
-        representedOptions = optionsAsArray.joined(separator: ":")
-        return representedOptions
-      }
+        return optionsAsArray.joined(separator: ":")
+    }
 }

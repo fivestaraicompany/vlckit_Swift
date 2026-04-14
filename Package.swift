@@ -26,14 +26,19 @@ let package = Package(
             checksum: "6e3d3ef2e36f397b70face072008942ebcc189f4d554258747a002aa236a9750"
         ),
         .target(
-            name: "VLCKitSwift",
+            name: "CLibVLC",
             dependencies: ["MobileVLCKit"],
+            path: "Sources/CLibVLC",
+            publicHeadersPath: "include"
+        ),
+        .target(
+            name: "VLCKitSwift",
+            dependencies: ["MobileVLCKit", "CLibVLC"],
             path: "Sources/Swift",
             exclude: [
                 "VLC_Helper_Code.swift",
                 "VCL_Lib_VLC_Bridging.swift"
-            ],
-            publicHeadersPath: "."
+            ]
         ),
         .testTarget(
             name: "VLCKitTests",

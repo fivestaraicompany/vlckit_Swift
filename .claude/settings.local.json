@@ -42,7 +42,21 @@
       "Bash(cat Sources/*.swift)",
       "Bash(mv VLCiOSLegacyDialogProvider.swift VLC_iOS_Legacy_Dialog_Provider.swift)",
       "Bash(mv VLCLibVLCBridging.swift VLC_Lib_VLC_Bridging.swift)",
-      "Bash(mv VLCHelperCode.swift VLC_Helper_Code.swift)"
+      "Bash(mv VLCHelperCode.swift VLC_Helper_Code.swift)",
+      "Bash(wc -l /Users/jgoh/vlckit_Swift/Sources/Swift/*.swift)",
+      "Bash(xcodebuild -scheme VLCKitSwift -destination 'generic/platform=iOS Simulator' -sdk iphonesimulator build)",
+      "Bash(sudo xcode-select:*)",
+      "Bash(xcodebuild -version)",
+      "Bash(xcode-select:*)",
+      "Bash(grep -v \"^--$\")",
+      "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild:*)",
+      "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcrun --sdk iphonesimulator --show-sdk-path)",
+      "Bash(/Applications/Xcode.app/Contents/Developer/usr/bin/xcrun --find swiftc)",
+      "Bash(DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun:*)",
+      "Bash(cp:*)",
+      "Bash(DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build --target VLCKitSwift -Xswiftc -suppress-warnings)",
+      "Bash(grep:*)",
+      "Bash(nm -g /Users/jgoh/vlckit_Swift/.build/artifacts/vlckit_swift/MobileVLCKit/MobileVLCKit.xcframework/ios-arm64_i386_x86_64-simulator/MobileVLCKit.framework/MobileVLCKit)"
     ]
   }
 }

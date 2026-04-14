@@ -6,36 +6,20 @@
 //
 
 import Foundation
+import CoreGraphics
+import CLibVLC
 
 /**
- Notification name for time changes
+ Notification names
  */
-public let VLCMediaPlayerTimeChanged = "VLCMediaPlayerTimeChanged"
-
-/**
- Notification name for state changes
- */
-public let VLCMediaPlayerStateChanged = "VLCMediaPlayerStateChanged"
-
-/**
- Notification name for title changes
- */
-public let VLCMediaPlayerTitleChanged = "VLCMediaPlayerTitleChanged"
-
-/**
- Notification name for chapter changes
- */
-public let VLCMediaPlayerChapterChanged = "VLCMediaPlayerChapterChanged"
-
-/**
- Notification name for loudness changes
- */
-public let VLCMediaPlayerLoudnessChanged = "VLCMediaPlayerLoudnessChanged"
-
-/**
- Notification name for snapshot taken
- */
-public let VLCMediaPlayerSnapshotTaken = "VLCMediaPlayerSnapshotTaken"
+public extension Notification.Name {
+    static let VLCMediaPlayerTimeChanged = Notification.Name("VLCMediaPlayerTimeChanged")
+    static let VLCMediaPlayerStateChanged = Notification.Name("VLCMediaPlayerStateChanged")
+    static let VLCMediaPlayerTitleChanged = Notification.Name("VLCMediaPlayerTitleChanged")
+    static let VLCMediaPlayerChapterChanged = Notification.Name("VLCMediaPlayerChapterChanged")
+    static let VLCMediaPlayerLoudnessChanged = Notification.Name("VLCMediaPlayerLoudnessChanged")
+    static let VLCMediaPlayerSnapshotTaken = Notification.Name("VLCMediaPlayerSnapshotTaken")
+}
 
 /**
  Title description keys
@@ -107,14 +91,12 @@ public enum VLCDeinterlace: Int {
 /**
  Enum for navigation actions
  */
-public enum VLCMediaPlaybackNavigationAction: Int {
+public enum VLCMediaPlaybackNavigationAction: UInt {
     case activate = 0
-    case deactivate
-    case menuUp
-    case menuDown
-    case menuLeft
-    case menuRight
-    case select
+    case up
+    case down
+    case left
+    case right
 }
 
 /**
@@ -136,17 +118,20 @@ public protocol VLCMediaPlayerDelegate: AnyObject {
  */
 public class VLCMediaPlayer: NSObject {
 
-    public weak var delegate: (any VLCMediaPlayerDelegate)? = nil
+    public weak var delegate: (any VLCMediaPlayerDelegate)?
 
     public var libraryInstance: VLCLibrary?
     public private(set) var state: VLCMediaPlayerState = .stopped
-    public private(set) var time: VLCTime? = nil
-    public private(set) var remainingTime: VLCTime? = nil
+    public private(set) var time: VLCTime?
+    public private(set) var remainingTime: VLCTime?
     public private(set) var position: Float = 0.0
-    public private(set) var media: VLCMedia? = nil
+    public internal(set) var media: VLCMedia?
     public private(set) var snapshots: [String] = []
     public private(set) var audio: VLCAudio?
 
+    var playerInstance: OpaquePointer? {
+        return _playerInstance
+    }
     private var _playerInstance: OpaquePointer?
     private var _drawable: AnyObject?
     private var _libVLCBackgroundQueue: DispatchQueue?
@@ -160,61 +145,35 @@ public class VLCMediaPlayer: NSObject {
     public override init() {
         super.init()
         initCommon()
+        libraryInstance = VLCLibrary.sharedLibrary
+        _playerInstance = libvlc_media_player_new(libraryInstance?.instance)
+        registerObservers()
     }
 
     /**
      Initialize with a library instance
-
-     - Parameter library: The library instance to use
-     - Returns: A new media player instance
      */
     public convenience init(library: VLCLibrary) {
         self.init()
         self.libraryInstance = library
-        _playerInstance = libvlc_media_player_new(library.instance)
-        guard let playerInstance = _playerInstance else {
-            fatalError("Media player initialization failed")
+        if let oldPlayer = _playerInstance {
+            libvlc_media_player_release(oldPlayer)
         }
-        registerObservers()
-    }
-
-    /**
-     Initialize with a libvlc instance and library
-
-     - Parameters:
-       - playerInstance: The libvlc media player instance
-       - library: The library instance
-     - Returns: A new media player instance
-     */
-    public init(playerInstance: OpaquePointer, library: VLCLibrary) {
-        super.init()
-        initCommon()
-        self.libraryInstance = library
-        _playerInstance = playerInstance
-        registerObservers()
+        _playerInstance = libvlc_media_player_new(library.instance)
     }
 
     /**
      Initialize with drawable and options
-
-     - Parameters:
-       - drawable: The drawable object
-       - options: Array of options
-     - Returns: A new media player instance
      */
     public convenience init(drawable: AnyObject?, options: [String]?) {
         self.init()
 
         if let options = options, !options.isEmpty {
             libraryInstance = VLCLibrary(options: options)
+            if let oldPlayer = _playerInstance {
+                libvlc_media_player_release(oldPlayer)
+            }
             _playerInstance = libvlc_media_player_new(libraryInstance?.instance)
-        } else {
-            libraryInstance = VLCLibrary.sharedLibrary
-            _playerInstance = libvlc_media_player_new(libraryInstance?.instance)
-        }
-
-        guard let playerInstance = _playerInstance else {
-            fatalError("Media player initialization failed")
         }
 
         registerObservers()
@@ -224,19 +183,19 @@ public class VLCMediaPlayer: NSObject {
     private func initCommon() {
         time = VLCTime.nullTime()
         remainingTime = VLCTime.nullTime()
-        _libVLCBackgroundQueue = DispatchQueue(label: "libvlcQueue", attributes: .serial)
+        _libVLCBackgroundQueue = DispatchQueue(label: "libvlcQueue")
     }
 
     deinit {
         unregisterObservers()
         delegate = nil
-        libvlc_media_player_set_nsobject(_playerInstance, nil)
-        libvlc_media_player_set_equalizer(_playerInstance, nil)
-        if let viewpoint = _viewpoint {
-            libvlc_free(viewpoint)
-            _viewpoint = nil
+        if let playerInstance = _playerInstance {
+            libvlc_media_player_set_equalizer(playerInstance, nil)
+            libvlc_media_player_release(playerInstance)
         }
-        _playerInstance = nil
+        if let viewpoint = _viewpoint {
+            libvlc_free(UnsafeMutableRawPointer(viewpoint))
+        }
     }
 
     // MARK: - Drawable
@@ -248,19 +207,22 @@ public class VLCMediaPlayer: NSObject {
 
     private func setDrawable(_ drawable: AnyObject?) {
         _drawable = drawable
-        if let playerInstance = _playerInstance {
-            let drawablePtr = drawable.flatMap { Unmanaged.passUnretained($0).toOpaque() }
+        guard let playerInstance = _playerInstance else { return }
+        if let drawable = drawable {
+            let drawablePtr = Unmanaged.passUnretained(drawable).toOpaque()
             libvlc_media_player_set_nsobject(playerInstance, drawablePtr)
+        } else {
+            libvlc_media_player_set_nsobject(playerInstance, nil)
         }
     }
 
     // MARK: - Audio
 
-    public var audioPlayer: VLCAudio {
+    public var audioPlayer: VLCAudio? {
         if audio == nil {
             audio = VLCAudio(mediaPlayerInstance: _playerInstance)
         }
-        return audio!
+        return audio
     }
 
     // MARK: - Video Tracks
@@ -279,7 +241,7 @@ public class VLCMediaPlayer: NSObject {
 
     public func setVideoTrack(index: Int) {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_video_set_track(playerInstance, index)
+        libvlc_video_set_track(playerInstance, Int32(index))
     }
 
     public var videoTrackNames: [String] {
@@ -288,13 +250,16 @@ public class VLCMediaPlayer: NSObject {
         guard count > 0 else { return [] }
 
         var names: [String] = []
-        if let firstTrack = libvlc_video_get_track_description(playerInstance) {
-            var currentTrack = firstTrack
-            while currentTrack.pointee.psz_name != nil {
-                names.append(String(cString: currentTrack.pointee.psz_name))
-                currentTrack = currentTrack.pointee.p_next ?? nil
+        var currentTrack: UnsafeMutablePointer<libvlc_track_description_t>? = libvlc_video_get_track_description(playerInstance)
+        let firstTrack = currentTrack
+        while let track = currentTrack {
+            if let pszName = track.pointee.psz_name {
+                names.append(String(cString: pszName))
             }
-            libvlc_track_description_list_release(firstTrack)
+            currentTrack = track.pointee.p_next
+        }
+        if let first = firstTrack {
+            libvlc_track_description_list_release(first)
         }
         return names
     }
@@ -305,13 +270,14 @@ public class VLCMediaPlayer: NSObject {
         guard count > 0 else { return [] }
 
         var indexes: [Int] = []
-        if let firstTrack = libvlc_video_get_track_description(playerInstance) {
-            var currentTrack = firstTrack
-            while currentTrack.pointee.psz_name != nil {
-                indexes.append(Int(currentTrack.pointee.i_id))
-                currentTrack = currentTrack.pointee.p_next ?? nil
-            }
-            libvlc_track_description_list_release(firstTrack)
+        var currentTrack: UnsafeMutablePointer<libvlc_track_description_t>? = libvlc_video_get_track_description(playerInstance)
+        let firstTrack = currentTrack
+        while let track = currentTrack {
+            indexes.append(Int(track.pointee.i_id))
+            currentTrack = track.pointee.p_next
+        }
+        if let first = firstTrack {
+            libvlc_track_description_list_release(first)
         }
         return indexes
     }
@@ -332,7 +298,7 @@ public class VLCMediaPlayer: NSObject {
 
     public func setSubtitle(index: Int) {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_video_set_spu(playerInstance, index)
+        libvlc_video_set_spu(playerInstance, Int32(index))
     }
 
     public var videoSubTitlesNames: [String] {
@@ -341,13 +307,16 @@ public class VLCMediaPlayer: NSObject {
         guard count > 0 else { return [] }
 
         var names: [String] = []
-        if let firstTrack = libvlc_video_get_spu_description(playerInstance) {
-            var currentTrack = firstTrack
-            while currentTrack.pointee.psz_name != nil {
-                names.append(String(cString: currentTrack.pointee.psz_name))
-                currentTrack = currentTrack.pointee.p_next ?? nil
+        var currentTrack: UnsafeMutablePointer<libvlc_track_description_t>? = libvlc_video_get_spu_description(playerInstance)
+        let firstTrack = currentTrack
+        while let track = currentTrack {
+            if let pszName = track.pointee.psz_name {
+                names.append(String(cString: pszName))
             }
-            libvlc_track_description_list_release(firstTrack)
+            currentTrack = track.pointee.p_next
+        }
+        if let first = firstTrack {
+            libvlc_track_description_list_release(first)
         }
         return names
     }
@@ -358,13 +327,14 @@ public class VLCMediaPlayer: NSObject {
         guard count > 0 else { return [] }
 
         var indexes: [Int] = []
-        if let firstTrack = libvlc_video_get_spu_description(playerInstance) {
-            var currentTrack = firstTrack
-            while currentTrack.pointee.psz_name != nil {
-                indexes.append(Int(currentTrack.pointee.i_id))
-                currentTrack = currentTrack.pointee.p_next ?? nil
-            }
-            libvlc_track_description_list_release(firstTrack)
+        var currentTrack: UnsafeMutablePointer<libvlc_track_description_t>? = libvlc_video_get_spu_description(playerInstance)
+        let firstTrack = currentTrack
+        while let track = currentTrack {
+            indexes.append(Int(track.pointee.i_id))
+            currentTrack = track.pointee.p_next
+        }
+        if let first = firstTrack {
+            libvlc_track_description_list_release(first)
         }
         return indexes
     }
@@ -374,15 +344,16 @@ public class VLCMediaPlayer: NSObject {
         return libvlc_media_player_add_slave(playerInstance,
                                              libvlc_media_slave_type_subtitle,
                                              path,
-                                             true) != 0
+                                             true) == 0
     }
 
     public func addPlaybackSlave(_ slaveURL: URL, type: VLCMediaPlaybackSlaveType, enforce: Bool) -> Int {
         guard let playerInstance = _playerInstance else { return -1 }
-        return libvlc_media_player_add_slave(playerInstance,
-                                             type.rawValue,
-                                             slaveURL.absoluteString,
-                                             enforce)
+        let slaveType: libvlc_media_slave_type_t = type == .subtitles ? libvlc_media_slave_type_subtitle : libvlc_media_slave_type_audio
+        return Int(libvlc_media_player_add_slave(playerInstance,
+                                                 slaveType,
+                                                 slaveURL.absoluteString,
+                                                 enforce))
     }
 
     public var currentVideoSubTitleDelay: Int {
@@ -392,7 +363,7 @@ public class VLCMediaPlayer: NSObject {
 
     public func setSubtitleDelay(_ delay: Int) {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_video_set_spu_delay(playerInstance, delay)
+        libvlc_video_set_spu_delay(playerInstance, Int64(delay))
     }
 
     // MARK: - Video Crop & Aspect Ratio
@@ -401,7 +372,6 @@ public class VLCMediaPlayer: NSObject {
         guard let playerInstance = _playerInstance else { return nil }
         guard let result = libvlc_video_get_crop_geometry(playerInstance) else { return nil }
         let str = String(cString: result)
-        libvlc_free(result)
         return str
     }
 
@@ -414,7 +384,6 @@ public class VLCMediaPlayer: NSObject {
         guard let playerInstance = _playerInstance else { return nil }
         guard let result = libvlc_video_get_aspect_ratio(playerInstance) else { return nil }
         let str = String(cString: result)
-        libvlc_free(result)
         return str
     }
 
@@ -435,16 +404,13 @@ public class VLCMediaPlayer: NSObject {
 
     public func saveVideoSnapshot(at path: String, width: Int, height: Int) {
         guard let playerInstance = _playerInstance else { return }
-        let failure = libvlc_video_take_snapshot(playerInstance, 0, path, width, height)
-        if failure != 0 {
-            fatalError("Can't take a video snapshot - No video output")
-        }
+        libvlc_video_take_snapshot(playerInstance, 0, path, UInt32(width), UInt32(height))
     }
 
     public func setDeinterlace(_ deinterlace: VLCDeinterlace, withFilter filterName: String?) {
         guard let playerInstance = _playerInstance else { return }
         let filter = filterName ?? ""
-        libvlc_video_set_deinterlace(playerInstance, deinterlace.rawValue, filter)
+        libvlc_video_set_deinterlace(playerInstance, Int32(deinterlace.rawValue), filter)
     }
 
     // MARK: - Video Size & Properties
@@ -504,7 +470,7 @@ public class VLCMediaPlayer: NSObject {
 
     public func setChapter(_ chapter: Int) {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_media_player_set_chapter(playerInstance, chapter)
+        libvlc_media_player_set_chapter(playerInstance, Int32(chapter))
     }
 
     public func nextChapter() {
@@ -515,25 +481,6 @@ public class VLCMediaPlayer: NSObject {
     public func previousChapter() {
         guard let playerInstance = _playerInstance else { return }
         libvlc_media_player_previous_chapter(playerInstance)
-    }
-
-    public func chapters(forTitle titleIndex: Int) -> [String] {
-        guard let playerInstance = _playerInstance else { return [] }
-        let count = Int(libvlc_media_player_get_chapter_count(playerInstance))
-        guard count > 0 else { return [] }
-
-        var names: [String] = []
-        if let firstTrack = libvlc_video_get_chapter_description(playerInstance, titleIndex) {
-            var currentTrack = firstTrack
-            for _ in 0..<count {
-                if let psz_name = currentTrack.pointee.psz_name {
-                    names.append(String(cString: psz_name))
-                }
-                currentTrack = currentTrack.pointee.p_next ?? nil
-            }
-            libvlc_track_description_list_release(firstTrack)
-        }
-        return names
     }
 
     // MARK: - Titles
@@ -547,111 +494,12 @@ public class VLCMediaPlayer: NSObject {
 
     public func setTitle(_ title: Int) {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_media_player_set_title(playerInstance, title)
+        libvlc_media_player_set_title(playerInstance, Int32(title))
     }
 
     public var numberOfTitles: Int {
         guard let playerInstance = _playerInstance else { return 0 }
         return Int(libvlc_media_player_get_title_count(playerInstance))
-    }
-
-    public var titles: [String] {
-        guard let playerInstance = _playerInstance else { return [] }
-        let count = Int(libvlc_media_player_get_title_count(playerInstance))
-        guard count > 0 else { return [] }
-
-        var names: [String] = []
-        if let firstTrack = libvlc_video_get_title_description(playerInstance) {
-            var currentTrack = firstTrack
-            while let psz_name = currentTrack.pointee.psz_name {
-                names.append(String(cString: psz_name))
-                currentTrack = currentTrack.pointee.p_next ?? nil
-            }
-            libvlc_track_description_list_release(firstTrack)
-        }
-        return names
-    }
-
-    public func titleDescriptions() -> [[String: Any]] {
-        guard let playerInstance = _playerInstance else { return [] }
-
-        var titleInfo: OpaquePointer? = nil
-        let numberOfTitleDescriptions = libvlc_media_player_get_full_title_descriptions(playerInstance, &titleInfo)
-
-        guard numberOfTitleDescriptions > 0 else {
-            return []
-        }
-
-        var array: [[String: Any]] = []
-        for i in 0..<numberOfTitleDescriptions {
-            guard let titlePtr = UnsafeMutablePointer<libvlc_title_description_t>(OpaquePointer(titleInfo) + i) else { continue }
-
-            var dictionary: [String: Any] = [
-                VLCTitleDescriptionDuration: titlePtr.pointee.i_duration,
-                VLCTitleDescriptionIsMenu: (titlePtr.pointee.i_flags & libvlc_title_menu) != 0
-            ]
-
-            if let psz_name = titlePtr.pointee.psz_name {
-                dictionary[VLCTitleDescriptionName] = String(cString: psz_name)
-            }
-
-            array.append(dictionary)
-        }
-
-        libvlc_title_descriptions_release(titleInfo, numberOfTitleDescriptions)
-        return array
-    }
-
-    public func indexOfLongestTitle() -> Int {
-        let titles = titleDescriptions()
-        guard !titles.isEmpty else { return 0 }
-
-        var currentlyFoundTitle = 0
-        var currentlySelectedDuration: Int64 = 0
-
-        for (x, title) in titles.enumerated() {
-            if let duration = title[VLCTitleDescriptionDuration] as? Int64, duration > currentlySelectedDuration {
-                currentlySelectedDuration = duration
-                currentlyFoundTitle = x
-            }
-        }
-
-        return currentlyFoundTitle
-    }
-
-    public func numberOfChapters(forTitle titleIndex: Int) -> Int {
-        guard let playerInstance = _playerInstance else { return 0 }
-        return Int(libvlc_media_player_get_chapter_count_for_title(playerInstance, titleIndex))
-    }
-
-    public func chapterDescriptions(forTitle titleIndex: Int) -> [[String: Any]] {
-        guard let playerInstance = _playerInstance else { return [] }
-
-        var chapterDescriptions: OpaquePointer? = nil
-        let numberOfChapterDescriptions = libvlc_media_player_get_full_chapter_descriptions(playerInstance, titleIndex, &chapterDescriptions)
-
-        guard numberOfChapterDescriptions > 0 else {
-            return []
-        }
-
-        var array: [[String: Any]] = []
-        for i in 0..<numberOfChapterDescriptions {
-            guard let chapterPtr = UnsafeMutablePointer<libvlc_chapter_description_t>(OpaquePointer(chapterDescriptions) + i) else { continue }
-
-            var dictionary: [String: Any] = [
-                VLCChapterDescriptionDuration: chapterPtr.pointee.i_duration,
-                VLCChapterDescriptionTimeOffset: chapterPtr.pointee.i_time_offset
-            ]
-
-            if let psz_name = chapterPtr.pointee.psz_name {
-                dictionary[VLCChapterDescriptionName] = String(cString: psz_name)
-            }
-
-            array.append(dictionary)
-        }
-
-        libvlc_chapter_descriptions_release(chapterDescriptions, numberOfChapterDescriptions)
-        return array
     }
 
     // MARK: - Audio Tracks
@@ -670,7 +518,7 @@ public class VLCMediaPlayer: NSObject {
 
     public func setAudioTrack(index: Int) {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_audio_set_track(playerInstance, index)
+        libvlc_audio_set_track(playerInstance, Int32(index))
     }
 
     public var audioTrackNames: [String] {
@@ -679,13 +527,16 @@ public class VLCMediaPlayer: NSObject {
         guard count > 0 else { return [] }
 
         var names: [String] = []
-        if let firstTrack = libvlc_audio_get_track_description(playerInstance) {
-            var currentTrack = firstTrack
-            while let psz_name = currentTrack.pointee.psz_name {
-                names.append(String(cString: psz_name))
-                currentTrack = currentTrack.pointee.p_next ?? nil
+        var currentTrack: UnsafeMutablePointer<libvlc_track_description_t>? = libvlc_audio_get_track_description(playerInstance)
+        let firstTrack = currentTrack
+        while let track = currentTrack {
+            if let pszName = track.pointee.psz_name {
+                names.append(String(cString: pszName))
             }
-            libvlc_track_description_list_release(firstTrack)
+            currentTrack = track.pointee.p_next
+        }
+        if let first = firstTrack {
+            libvlc_track_description_list_release(first)
         }
         return names
     }
@@ -696,13 +547,14 @@ public class VLCMediaPlayer: NSObject {
         guard count > 0 else { return [] }
 
         var indexes: [Int] = []
-        if let firstTrack = libvlc_audio_get_track_description(playerInstance) {
-            var currentTrack = firstTrack
-            while let psz_name = currentTrack.pointee.psz_name {
-                indexes.append(Int(currentTrack.pointee.i_id))
-                currentTrack = currentTrack.pointee.p_next ?? nil
-            }
-            libvlc_track_description_list_release(firstTrack)
+        var currentTrack: UnsafeMutablePointer<libvlc_track_description_t>? = libvlc_audio_get_track_description(playerInstance)
+        let firstTrack = currentTrack
+        while let track = currentTrack {
+            indexes.append(Int(track.pointee.i_id))
+            currentTrack = track.pointee.p_next
+        }
+        if let first = firstTrack {
+            libvlc_track_description_list_release(first)
         }
         return indexes
     }
@@ -714,7 +566,7 @@ public class VLCMediaPlayer: NSObject {
 
     public func setAudioChannel(_ channel: Int) {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_audio_set_channel(playerInstance, channel)
+        libvlc_audio_set_channel(playerInstance, Int32(channel))
     }
 
     public var currentAudioPlaybackDelay: Int {
@@ -724,11 +576,7 @@ public class VLCMediaPlayer: NSObject {
 
     public func setAudioPlaybackDelay(_ delay: Int) {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_audio_set_delay(playerInstance, delay)
-    }
-
-    public var momentaryLoudness: VLCMediaLoudness? {
-        return _equalizer?.momentaryLoudness
+        libvlc_audio_set_delay(playerInstance, Int64(delay))
     }
 
     // MARK: - Equalizer
@@ -746,88 +594,29 @@ public class VLCMediaPlayer: NSObject {
         return _equalizer != nil
     }
 
-    public func setEqualizerEnabled(_ enabled: Bool) {
-        if enabled && _equalizer == nil {
-            _equalizer = VLCAudioEqualizer()
-        } else if !enabled {
-            _equalizer = nil
-        }
-    }
-
-    public var equalizerProfiles: [String] {
-        let count = libvlc_audio_equalizer_get_preset_count()
-        var profiles: [String] = []
-        for x in 0..<count {
-            if let name = libvlc_audio_equalizer_get_preset_name(x) {
-                profiles.append(String(cString: name))
-            }
-        }
-        return profiles
-    }
-
-    public func resetEqualizer(fromProfile profile: UInt) {
-        // Simplified - actual implementation would require VLCAudioEqualizer setup
-    }
-
-    public var preAmplification: Float {
-        return _equalizer?.preAmplification ?? 0.0
-    }
-
-    public func setPreAmplification(_ value: Float) {
-        if _equalizer == nil {
-            _equalizer = VLCAudioEqualizer()
-        }
-        _equalizer?.preAmplification = value
-    }
-
-    public var numberOfBands: UInt {
-        return libvlc_audio_equalizer_get_band_count()
-    }
-
-    public func frequencyOfBand(atIndex index: UInt) -> Float {
-        return libvlc_audio_equalizer_get_band_frequency(index)
-    }
-
-    public func setAmplification(_ value: Float, forBand index: UInt) {
-        if _equalizer == nil {
-            _equalizer = VLCAudioEqualizer()
-        }
-        _equalizer?.bands.first { $0.index == index }?.amplification = value
-    }
-
-    public func amplificationOfBand(atIndex index: UInt) -> Float {
-        return _equalizer?.bands.first { $0.index == index }?.amplification ?? 0.0
-    }
-
     // MARK: - Media
 
-    public var mediaPlayer: VLCMedia? {
-        get { return media }
-        set {
-            guard let newValue = newValue else {
-                if media != nil {
-                    media = nil
-                    libvlc_media_player_set_media_async(_playerInstance, nil)
-                }
-                return
+    public func setMedia(_ newMedia: VLCMedia?) {
+        guard let newValue = newMedia else {
+            media = nil
+            if let playerInstance = _playerInstance {
+                libvlc_media_player_set_media(playerInstance, nil)
             }
+            return
+        }
 
-            if media != nil && media?.compare(newValue) == .orderedSame {
-                return
-            }
-
-            media = newValue
-            if let media = media {
-                libvlc_media_player_set_media_async(_playerInstance, media.libVLCMediaDescriptor)
-            }
+        media = newValue
+        if let playerInstance = _playerInstance {
+            libvlc_media_player_set_media(playerInstance, newValue.libVLCMediaDescriptor)
         }
     }
 
     // MARK: - Playback Control
 
-    public func play() {
-        guard let playerInstance = _playerInstance else { return }
-        libvlc_media_player_play(playerInstance)
+    @discardableResult
+    public func play() -> Bool {
+        guard let playerInstance = _playerInstance else { return false }
+        return libvlc_media_player_play(playerInstance) == 0
     }
 
     public func pause() {
@@ -837,50 +626,7 @@ public class VLCMediaPlayer: NSObject {
 
     public func stop() {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_media_player_stop_async(playerInstance)
-    }
-
-    public func viewPoint() -> VLCVideoViewpoint {
-        if let viewpoint = _viewpoint {
-            return VLCVideoViewpoint(yaw: viewpoint.pointee.f_yaw,
-                                     pitch: viewpoint.pointee.f_pitch,
-                                     roll: viewpoint.pointee.f_roll,
-                                     fov: viewpoint.pointee.f_field_of_view)
-        }
-
-        let newViewpoint = libvlc_video_new_viewpoint()
-        _viewpoint = newViewpoint
-        return VLCVideoViewpoint(yaw: newViewpoint.pointee.f_yaw,
-                                 pitch: newViewpoint.pointee.f_pitch,
-                                 roll: newViewpoint.pointee.f_roll,
-                                 fov: newViewpoint.pointee.f_field_of_view)
-    }
-
-    public func updateViewpoint(yaw: Float, pitch: Float, roll: Float, fov: Float, absolute: Bool) -> Bool {
-        var viewpoint = viewPoint()
-        viewpoint.yaw = yaw
-        viewpoint.pitch = pitch
-        viewpoint.roll = roll
-        viewpoint.fov = fov
-
-        guard let playerInstance = _playerInstance else { return false }
-        return libvlc_video_update_viewpoint(playerInstance, viewpoint.ptr, absolute) == 0
-    }
-
-    public var yaw: Float {
-        return viewPoint().yaw
-    }
-
-    public var pitch: Float {
-        return viewPoint().pitch
-    }
-
-    public var roll: Float {
-        return viewPoint().roll
-    }
-
-    public var fov: Float {
-        return viewPoint().fov
+        libvlc_media_player_stop(playerInstance)
     }
 
     public func gotoNextFrame() {
@@ -918,41 +664,18 @@ public class VLCMediaPlayer: NSObject {
         setTime(VLCTime(timeWithInt: currentTime + intervalMs))
     }
 
-    public func extraShortJumpBackward() {
-        jumpBackward(3)
-    }
-
-    public func extraShortJumpForward() {
-        jumpForward(3)
-    }
-
-    public func shortJumpBackward() {
-        jumpBackward(10)
-    }
-
-    public func shortJumpForward() {
-        jumpForward(10)
-    }
-
-    public func mediumJumpBackward() {
-        jumpBackward(60)
-    }
-
-    public func mediumJumpForward() {
-        jumpForward(60)
-    }
-
-    public func longJumpBackward() {
-        jumpBackward(300)
-    }
-
-    public func longJumpForward() {
-        jumpForward(300)
-    }
+    public func extraShortJumpBackward() { jumpBackward(3) }
+    public func extraShortJumpForward() { jumpForward(3) }
+    public func shortJumpBackward() { jumpBackward(10) }
+    public func shortJumpForward() { jumpForward(10) }
+    public func mediumJumpBackward() { jumpBackward(60) }
+    public func mediumJumpForward() { jumpForward(60) }
+    public func longJumpBackward() { jumpBackward(300) }
+    public func longJumpForward() { jumpForward(300) }
 
     public func performNavigationAction(_ action: VLCMediaPlaybackNavigationAction) {
         guard let playerInstance = _playerInstance else { return }
-        libvlc_media_player_navigate(playerInstance, action.rawValue)
+        libvlc_media_player_navigate(playerInstance, UInt32(action.rawValue))
     }
 
     public var isPlaying: Bool {
@@ -982,7 +705,6 @@ public class VLCMediaPlayer: NSObject {
     }
 
     public func lastSnapshot() -> String? {
-        guard !snapshots.isEmpty else { return nil }
         return snapshots.last
     }
 
@@ -1000,7 +722,8 @@ public class VLCMediaPlayer: NSObject {
 
     public func setRendererItem(_ item: VLCRendererItem) -> Bool {
         guard let playerInstance = _playerInstance else { return false }
-        return libvlc_media_player_set_renderer(playerInstance, item.libVLCRendererItem) == 0
+        guard let rendererItem = item.libVLCRendererItem else { return false }
+        return libvlc_media_player_set_renderer(playerInstance, rendererItem) == 0
     }
 
     // MARK: - Private Methods
@@ -1010,89 +733,75 @@ public class VLCMediaPlayer: NSObject {
 
         _eventsHandler = VLCEventsHandler(object: self, configuration: VLCLibrary.sharedEventsConfiguration)
 
-        let eventsManager = libvlc_media_player_event_manager(playerInstance)
-        guard let eventsManager = eventsManager else { return }
+        guard let eventsManager = libvlc_media_player_event_manager(playerInstance) else { return }
 
         let userData = Unmanaged.passRetained(_eventsHandler!).toOpaque()
 
-        _libVLCBackgroundQueue?.async {
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerPlaying, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerPaused, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerEncounteredError, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerEndReached, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerStopped, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerOpening, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerBuffering, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerESAdded, HandleMediaInstanceStateChanged, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerPlaying.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerPaused.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerEncounteredError.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerEndReached.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerStopped.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerOpening.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerBuffering.rawValue), handleMediaPlayerEvent, userData)
 
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerPositionChanged, HandleMediaPositionChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerTimeChanged, HandleMediaTimeChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerMediaChanged, HandleMediaPlayerMediaChanged, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerPositionChanged.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerTimeChanged.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerMediaChanged.rawValue), handleMediaPlayerEvent, userData)
 
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerTitleChanged, HandleMediaTitleChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerChapterChanged, HandleMediaChapterChanged, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerLoudnessChanged, HandleMediaLoudnessChanged, userData)
-
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerSnapshotTaken, HandleMediaPlayerSnapshot, userData)
-            libvlc_event_attach(eventsManager, libvlc_MediaPlayerRecordChanged, HandleMediaPlayerRecord, userData)
-        }
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerTitleChanged.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerChapterChanged.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaPlayerSnapshotTaken.rawValue), handleMediaPlayerEvent, userData)
     }
 
     private func unregisterObservers() {
+        guard let playerInstance = _playerInstance,
+              let eventsManager = libvlc_media_player_event_manager(playerInstance),
+              let eventsHandler = _eventsHandler else { return }
+
+        let userData = Unmanaged.passRetained(eventsHandler).toOpaque()
+
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerPlaying.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerPaused.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerEncounteredError.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerEndReached.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerStopped.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerOpening.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerBuffering.rawValue), handleMediaPlayerEvent, userData)
+
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerPositionChanged.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerTimeChanged.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerMediaChanged.rawValue), handleMediaPlayerEvent, userData)
+
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerTitleChanged.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerChapterChanged.rawValue), handleMediaPlayerEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaPlayerSnapshotTaken.rawValue), handleMediaPlayerEvent, userData)
+
         _eventsHandler = nil
-
-        guard let playerInstance = _playerInstance else { return }
-        let eventsManager = libvlc_media_player_event_manager(playerInstance)
-        guard let eventsManager = eventsManager else { return }
-
-        let userData = _eventsHandler.map { Unmanaged.passRetained($0).toOpaque() }
-
-        _libVLCBackgroundQueue?.async {
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerPlaying, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerPaused, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerEncounteredError, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerEndReached, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerStopped, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerOpening, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerBuffering, HandleMediaInstanceStateChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerESAdded, HandleMediaInstanceStateChanged, userData)
-
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerPositionChanged, HandleMediaPositionChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerTimeChanged, HandleMediaTimeChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerMediaChanged, HandleMediaPlayerMediaChanged, userData)
-
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerTitleChanged, HandleMediaTitleChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerChapterChanged, HandleMediaChapterChanged, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerLoudnessChanged, HandleMediaLoudnessChanged, userData)
-
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerSnapshotTaken, HandleMediaPlayerSnapshot, userData)
-            libvlc_event_detach(eventsManager, libvlc_MediaPlayerRecordChanged, HandleMediaPlayerRecord, userData)
-        }
     }
 
-    private func handleTimeChanged(_ newTime: NSNumber) {
+    func handleTimeChanged(_ newTime: NSNumber) {
         time = VLCTime(timeWithNumber: newTime)
 
-        let currentTime = Double(newTime.int64Value) / 1000.0
+        let currentTime = Double(truncating: newTime) / 1000.0
         if currentTime > 0 && position > 0.0 {
-            let remaining = currentTime / position * (1.0 - position)
+            let remaining = currentTime / Double(position) * Double(1.0 - position)
             remainingTime = VLCTime(timeWithInt: Int64(-remaining * 1000))
         } else {
             remainingTime = VLCTime.nullTime()
         }
     }
 
-    private func handlePositionChanged(_ newPosition: NSNumber) {
+    func handlePositionChanged(_ newPosition: NSNumber) {
         position = newPosition.floatValue
     }
 
-    private func handleStateChanged(_ newState: NSNumber) {
-        let rawValue = newState.intValue
-        state = VLCMediaPlayerState(rawValue: rawValue) ?? .stopped
+    func handleStateChanged(_ newState: VLCMediaPlayerState) {
+        state = newState
     }
 
-    private func handleMediaChanged(_ newMedia: VLCMedia) {
-        if media != newMedia {
+    func handleMediaChanged(_ newMedia: VLCMedia?) {
+        if let newMedia = newMedia, media !== newMedia {
             media = newMedia
             time = VLCTime.nullTime()
             remainingTime = VLCTime.nullTime()
@@ -1100,201 +809,112 @@ public class VLCMediaPlayer: NSObject {
         }
     }
 
-    private func handleTitleChanged(_ newTitle: NSNumber) {
-        // Title index changed
-    }
-
-    private func handleChapterChanged(_ newChapter: NSNumber) {
-        // Chapter index changed
-    }
-
-    private func handleLoudnessChanged(_ newLoudness: VLCMediaLoudness) {
-        _equalizer?.momentaryLoudness = newLoudness
-    }
-
-    private func handleSnapshot(_ fileName: String) {
+    func handleSnapshot(_ fileName: String) {
         snapshots.append(fileName)
     }
+}
 
-    private func handleRecord(_ event: VLCMediaPlayerRecordEvent) {
-        if event.recording {
-            delegate?.mediaPlayerStartedRecording(self)
-        } else {
-            let path = event.filePath ?? ""
-            delegate?.mediaPlayer(self, recordingStoppedAtPath: path)
+// MARK: - VLCMediaPlayer Event Callback
+
+private let handleMediaPlayerEvent: @convention(c) (UnsafePointer<libvlc_event_t>?, UnsafeMutableRawPointer?) -> Void = { p_event, userData in
+    guard let event = p_event?.pointee, let userData = userData else { return }
+    let eventsHandler = Unmanaged<VLCEventsHandler>.fromOpaque(userData).takeUnretainedValue()
+
+    eventsHandler.handleEvent { object in
+        guard let mediaPlayer = object as? VLCMediaPlayer else { return }
+
+        let eventType = UInt32(event.type)
+
+        switch eventType {
+        case libvlc_MediaPlayerPlaying.rawValue:
+            mediaPlayer.handleStateChanged(.playing)
+            let notification = Notification(name: .VLCMediaPlayerStateChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerStateChanged(notification)
+
+        case libvlc_MediaPlayerPaused.rawValue:
+            mediaPlayer.handleStateChanged(.paused)
+            let notification = Notification(name: .VLCMediaPlayerStateChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerStateChanged(notification)
+
+        case libvlc_MediaPlayerStopped.rawValue:
+            mediaPlayer.handleStateChanged(.stopped)
+            let notification = Notification(name: .VLCMediaPlayerStateChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerStateChanged(notification)
+
+        case libvlc_MediaPlayerEncounteredError.rawValue:
+            mediaPlayer.handleStateChanged(.error)
+            let notification = Notification(name: .VLCMediaPlayerStateChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerStateChanged(notification)
+
+        case libvlc_MediaPlayerEndReached.rawValue:
+            mediaPlayer.handleStateChanged(.ended)
+            let notification = Notification(name: .VLCMediaPlayerStateChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerStateChanged(notification)
+
+        case libvlc_MediaPlayerOpening.rawValue:
+            mediaPlayer.handleStateChanged(.opening)
+            let notification = Notification(name: .VLCMediaPlayerStateChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerStateChanged(notification)
+
+        case libvlc_MediaPlayerBuffering.rawValue:
+            mediaPlayer.handleStateChanged(.buffering)
+            let notification = Notification(name: .VLCMediaPlayerStateChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerStateChanged(notification)
+
+        case libvlc_MediaPlayerESAdded.rawValue:
+            mediaPlayer.handleStateChanged(.esAdded)
+            let notification = Notification(name: .VLCMediaPlayerStateChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerStateChanged(notification)
+
+        case libvlc_MediaPlayerPositionChanged.rawValue:
+            let newPosition = NSNumber(value: event.u.media_player_position_changed.new_position)
+            mediaPlayer.handlePositionChanged(newPosition)
+
+        case libvlc_MediaPlayerTimeChanged.rawValue:
+            let newTime = NSNumber(value: event.u.media_player_time_changed.new_time)
+            mediaPlayer.handleTimeChanged(newTime)
+            let notification = Notification(name: .VLCMediaPlayerTimeChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerTimeChanged(notification)
+
+        case libvlc_MediaPlayerMediaChanged.rawValue:
+            let newMedia = VLCMedia(libVLCMediaDescriptor: event.u.media_player_media_changed.new_media)
+            mediaPlayer.handleMediaChanged(newMedia)
+
+        case libvlc_MediaPlayerTitleChanged.rawValue:
+            let notification = Notification(name: .VLCMediaPlayerTitleChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerTitleChanged(notification)
+
+        case libvlc_MediaPlayerChapterChanged.rawValue:
+            let notification = Notification(name: .VLCMediaPlayerChapterChanged, object: mediaPlayer)
+            NotificationCenter.default.post(notification)
+            mediaPlayer.delegate?.mediaPlayerChapterChanged(notification)
+
+        case libvlc_MediaPlayerSnapshotTaken.rawValue:
+            if let psz_filename = event.u.media_player_snapshot_taken.psz_filename {
+                let fileName = String(cString: psz_filename)
+                mediaPlayer.handleSnapshot(fileName)
+                let notification = Notification(name: .VLCMediaPlayerSnapshotTaken, object: mediaPlayer)
+                NotificationCenter.default.post(notification)
+                mediaPlayer.delegate?.mediaPlayerSnapshot(fileName)
+            }
+
+        default:
+            break
         }
     }
 }
 
-// MARK: - Event Handlers
-
-private func HandleMediaInstanceStateChanged(_ event: libvlc_event_t, opaque: UnsafeMutableRawPointer?) {
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
-
-    var newState: VLCMediaPlayerState = .stopped
-
-    switch event.type {
-    case libvlc_MediaPlayerPlaying:
-        newState = .playing
-    case libvlc_MediaPlayerPaused:
-        newState = .paused
-    case libvlc_MediaPlayerStopped:
-        newState = .stopped
-    case libvlc_MediaPlayerEncounteredError:
-        newState = .error
-    case libvlc_MediaPlayerBuffering:
-        newState = .buffering
-    case libvlc_MediaPlayerOpening:
-        newState = .opening
-    case libvlc_MediaPlayerEndReached:
-        newState = .ended
-    case libvlc_MediaPlayerESAdded:
-        newState = .esAdded
-    default:
-        return
-    }
-
-    eventsHandler.handleEvent { object in
-        let mediaPlayer = object as! VLCMediaPlayer
-        let notification = Notification(name: VLCMediaPlayerStateChanged, object: mediaPlayer)
-        NotificationCenter.default.post(notification)
-        mediaPlayer.delegate?.mediaPlayerStateChanged(notification)
-    }
-}
-
-private func HandleMediaPositionChanged(_ event: libvlc_event_t, opaque: UnsafeMutableRawPointer?) {
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
-
-    eventsHandler.handleEvent { object in
-        let mediaPlayer = object as! VLCMediaPlayer
-        let newPosition = NSNumber(value: event.u.media_player_position_changed.new_position)
-        mediaPlayer.handlePositionChanged(newPosition)
-    }
-}
-
-private func HandleMediaTimeChanged(_ event: libvlc_event_t, opaque: UnsafeMutableRawPointer?) {
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
-
-    let newTime = NSNumber(value: event.u.media_player_time_changed.new_time)
-
-    eventsHandler.handleEvent { object in
-        let mediaPlayer = object as! VLCMediaPlayer
-        mediaPlayer.handleTimeChanged(newTime)
-
-        let notification = Notification(name: VLCMediaPlayerTimeChanged, object: mediaPlayer)
-        NotificationCenter.default.post(notification)
-        mediaPlayer.delegate?.mediaPlayerTimeChanged(notification)
-    }
-}
-
-private func HandleMediaPlayerMediaChanged(_ event: libvlc_event_t, opaque: UnsafeMutableRawPointer?) {
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
-
-    let newMedia = VLCMedia(libVLCMediaDescriptor: event.u.media_player_media_changed.new_media)
-
-    eventsHandler.handleEvent { object in
-        let mediaPlayer = object as! VLCMediaPlayer
-        mediaPlayer.handleMediaChanged(newMedia)
-    }
-}
-
-private func HandleMediaTitleChanged(_ event: libvlc_event_t, opaque: UnsafeMutableRawPointer?) {
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
-
-    eventsHandler.handleEvent { object in
-        let mediaPlayer = object as! VLCMediaPlayer
-        let newTitle = NSNumber(value: event.u.media_player_title_changed.new_title)
-        mediaPlayer.handleTitleChanged(newTitle)
-
-        let notification = Notification(name: VLCMediaPlayerTitleChanged, object: mediaPlayer)
-        NotificationCenter.default.post(notification)
-        mediaPlayer.delegate?.mediaPlayerTitleChanged(notification)
-    }
-}
-
-private func HandleMediaChapterChanged(_ event: libvlc_event_t, opaque: UnsafeMutableRawPointer?) {
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
-
-    eventsHandler.handleEvent { object in
-        let mediaPlayer = object as! VLCMediaPlayer
-        let newChapter = NSNumber(value: event.u.media_player_chapter_changed.new_chapter)
-        mediaPlayer.handleChapterChanged(newChapter)
-
-        let notification = Notification(name: VLCMediaPlayerChapterChanged, object: mediaPlayer)
-        NotificationCenter.default.post(notification)
-        mediaPlayer.delegate?.mediaPlayerChapterChanged(notification)
-    }
-}
-
-private func HandleMediaLoudnessChanged(_ event: libvlc_event_t, opaque: UnsafeMutableRawPointer?) {
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
-
-    let loudness = VLCMediaLoudness(loudnessValue: Double(event.u.media_player_loudness_changed.momentary_loudness),
-                                    date: event.u.media_player_loudness_changed.date * 1000)
-
-    eventsHandler.handleEvent { object in
-        let mediaPlayer = object as! VLCMediaPlayer
-        mediaPlayer.handleLoudnessChanged(loudness)
-
-        let notification = Notification(name: VLCMediaPlayerLoudnessChanged, object: mediaPlayer)
-        NotificationCenter.default.post(notification)
-        mediaPlayer.delegate?.mediaPlayerLoudnessChanged(loudness)
-    }
-}
-
-private func HandleMediaPlayerSnapshot(_ event: libvlc_event_t, opaque: UnsafeMutableRawPointer?) {
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
-
-    guard let psz_filename = event.u.media_player_snapshot_taken.psz_filename else { return }
-    let fileName = String(cString: psz_filename)
-
-    eventsHandler.handleEvent { object in
-        let mediaPlayer = object as! VLCMediaPlayer
-        mediaPlayer.handleSnapshot(fileName)
-
-        let notification = Notification(name: VLCMediaPlayerSnapshotTaken, object: mediaPlayer)
-        NotificationCenter.default.post(notification)
-        mediaPlayer.delegate?.mediaPlayerSnapshot(fileName)
-    }
-}
-
-private func HandleMediaPlayerRecord(_ event: libvlc_event_t, opaque: UnsafeMutableRawPointer?) {
-    let eventsHandler = opaque.map { Unmanaged<VLCEventsHandler>.from($0).takeUnretainedValue() } ?? return
-
-    let recording = event.u.media_player_record_changed.recording != 0
-    let filePath = event.u.media_player_record_changed.file_path.map { String(cString: $0) }
-
-    eventsHandler.handleEvent { object in
-        let mediaPlayer = object as! VLCMediaPlayer
-        let recordEvent = VLCMediaPlayerRecordEvent(recording: recording, filePath: filePath)
-        mediaPlayer.handleRecord(recordEvent)
-    }
-}
-
 // MARK: - Helper Structs
-
-public struct VLCVideoViewpoint {
-    public var yaw: Float
-    public var pitch: Float
-    public var roll: Float
-    public var fov: Float
-
-    fileprivate var ptr: OpaquePointer {
-        var viewpoint = libvlc_video_new_viewpoint()
-        viewpoint.pointee.f_yaw = yaw
-        viewpoint.pointee.f_pitch = pitch
-        viewpoint.pointee.f_roll = roll
-        viewpoint.pointee.f_field_of_view = fov
-        return viewpoint
-    }
-
-    public init(yaw: Float, pitch: Float, roll: Float, fov: Float) {
-        self.yaw = yaw
-        self.pitch = pitch
-        self.roll = roll
-        self.fov = fov
-    }
-}
 
 public struct VLCMediaPlayerRecordEvent {
     public var recording: Bool

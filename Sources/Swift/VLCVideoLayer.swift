@@ -6,71 +6,48 @@
 //
 
 import Foundation
-#if canImport(AppKit)
-import AppKit
-#endif
-#if canImport(CALayer)
+import CoreGraphics
+#if canImport(QuartzCore)
 import QuartzCore
 #endif
+
+#if canImport(AppKit) && !targetEnvironment(macCatalyst)
+import AppKit
 
 /**
  VLCVideoLayer - Video layer for macOS
  */
 public class VLCVideoLayer: CALayer {
 
-        /**
-     Create a new video layer
-         */
     public override init() {
         super.init()
-           }
+    }
 
-        /**
-     Create a new video layer with a coder
-
-         - Parameter coder: The coder to use
-         */
     public required init?(coder: NSCoder) {
         super.init(coder: coder)
-           }
+    }
 }
 
 /**
  VLCVideoLayoutManager - Video layout manager
  */
-public class VLCVideoLayoutManager: NSObject {
+public class VLCVideoLayoutManager: NSObject, CALayoutManager {
 
-    private static var _layoutManager: VLCVideoLayoutManager? = nil
-    private static let _onceToken: DispatchSource = DispatchSource.makeSource()
-
-         /**
-     Create a new layout manager
-
-         - Returns: The shared layout manager instance
-         */
-    public static var layoutManager: VLCVideoLayoutManager {
-        dispatch_once(_onceToken) {
-             _layoutManager = VLCVideoLayoutManager()
-              }
-        return _layoutManager!
-           }
+    public static let shared = VLCVideoLayoutManager()
 
     public var fillScreenEntirely: Bool = true
     public var originalVideoSize: CGSize = .zero
 
-         /**
-     Create a new layout manager
-          */
     public override init() {
         super.init()
-           }
+    }
 
     public func layoutSublayers(of layer: CALayer) {
         guard let sublayers = layer.sublayers, !sublayers.isEmpty,
               let firstSublayer = sublayers.first,
               firstSublayer.name == "vlcopengllayer" else {
             return
-           }
+        }
 
         let videolayer = firstSublayer
         let bounds = layer.bounds
@@ -86,8 +63,18 @@ public class VLCVideoLayoutManager: NSObject {
             videoRect.size.height = ratio * original.height
             videoRect.origin.x += (bounds.width - videoRect.width) / 2.0
             videoRect.origin.y += (bounds.height - videoRect.height) / 2.0
-           }
+        }
 
         videolayer.frame = videoRect
-           }
+    }
+
+    public func invalidateLayout(of layer: CALayer) {
+        // Nothing to do
+    }
+
+    public func preferredSize(of layer: CALayer) -> CGSize {
+        return layer.bounds.size
+    }
 }
+
+#endif

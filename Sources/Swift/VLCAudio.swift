@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CLibVLC
 
 /**
  Notification name for volume changes
@@ -23,70 +24,75 @@ public final class VLCAudio: NSObject {
     private let volumeMin = 0
     private let volumeStep = 6
 
-      /// The current audio volume (0-200)
-    public var volume: Int = 0 {
-        didSet {
-            let clampedVolume = max(volumeMin, min(volumeMax, volume))
-            libvlc_audio_set_volume(_playerInstance, clampedVolume)
-         }
-     }
+    /// The current audio volume (0-200)
+    public var volume: Int {
+        get {
+            guard let playerInstance = _playerInstance else { return 0 }
+            return Int(libvlc_audio_get_volume(playerInstance))
+        }
+        set {
+            guard let playerInstance = _playerInstance else { return }
+            let clampedVolume = max(volumeMin, min(volumeMax, newValue))
+            libvlc_audio_set_volume(playerInstance, Int32(clampedVolume))
+        }
+    }
 
-      /// Whether audio is muted
+    /// Whether audio is muted
     public var muted: Bool {
         get {
-            return libvlc_audio_get_mute(_playerInstance) != 0
-         }
+            guard let playerInstance = _playerInstance else { return false }
+            return libvlc_audio_get_mute(playerInstance) != 0
+        }
         set {
-            libvlc_audio_set_mute(_playerInstance, newValue ? 1 : 0)
-         }
-     }
+            guard let playerInstance = _playerInstance else { return }
+            libvlc_audio_set_mute(playerInstance, newValue ? 1 : 0)
+        }
+    }
 
-      /// Whether passthrough mode is enabled
-    public var passthrough: Bool = false {
+    /// Whether passthrough mode is enabled
+    public var passthrough: Bool {
         get {
-            guard let deviceIdentifier = libvlc_audio_output_device_get(_playerInstance) else {
+            guard let playerInstance = _playerInstance else { return false }
+            guard let deviceIdentifier = libvlc_audio_output_device_get(playerInstance) else {
                 return false
-             }
+            }
             let isPassthrough = strcmp(deviceIdentifier, "encoded") == 0
-            libvlc_free(deviceIdentifier)
+            libvlc_free(UnsafeMutableRawPointer(mutating: deviceIdentifier))
             return isPassthrough
-         }
+        }
         set {
+            guard let playerInstance = _playerInstance else { return }
             if newValue {
-                libvlc_audio_output_device_set(_playerInstance, nil, "encoded")
-             } else {
-                libvlc_audio_output_device_set(_playerInstance, nil, "pcm")
-             }
-         }
-     }
+                libvlc_audio_output_device_set(playerInstance, nil, "encoded")
+            } else {
+                libvlc_audio_output_device_set(playerInstance, nil, "pcm")
+            }
+        }
+    }
 
-      /// Increase volume
+    /// Increase volume
     public func volumeUp() {
-        var newVolume = volume + volumeStep
-        newVolume = min(volumeMax, max(volumeMin, newVolume))
-        volume = newVolume
-      }
+        volume = min(volumeMax, volume + volumeStep)
+    }
 
-      /// Decrease volume
+    /// Decrease volume
     public func volumeDown() {
-        var newVolume = volume - volumeStep
-        newVolume = min(volumeMax, max(volumeMin, newVolume))
-        volume = newVolume
-      }
+        volume = max(volumeMin, volume - volumeStep)
+    }
 
-      /// Initialize with a media player instance
+    /// Initialize with a media player instance
     public init?(mediaPlayerInstance playerInstance: OpaquePointer?) {
-        self._playerInstance = playerInstance
         guard let playerInstance = playerInstance else {
             return nil
-         }
+        }
+        self._playerInstance = playerInstance
         libvlc_media_player_retain(playerInstance)
         super.init()
-      }
+    }
 
-      /// Deinitialize
     deinit {
-        guard let playerInstance = _playerInstance else { return }
-        libvlc_media_player_release(playerInstance)
-      }
+        if let playerInstance = _playerInstance {
+            libvlc_media_player_release(playerInstance)
+        }
+    }
 }

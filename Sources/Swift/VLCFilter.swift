@@ -16,104 +16,93 @@ public final class VLCFilterParameter: NSObject {
 
     public static func create(withProperties properties: [String: Any]) -> VLCFilterParameter {
         return VLCFilterParameter(withProperties: properties)
-       }
+    }
 
     public override init() {
         super.init()
-       }
+    }
 
     public init(withProperties properties: [String: Any]) {
-         _properties = properties.mutableCopy() as? [String: Any] ?? [:]
-         _properties[VLCFilterParameterPropertyValueKey] = properties[VLCFilterParameterPropertyDefaultValueKey]?.copy()
+        _properties = properties
+        _properties[kVLCFilterParameterPropertyValueKey] = properties[kVLCFilterParameterPropertyDefaultValueKey]
         super.init()
-       }
+    }
 
     public var value: Any? {
-        return _properties[VLCFilterParameterPropertyValueKey]
-       }
+        return _properties[kVLCFilterParameterPropertyValueKey]
+    }
 
     public var defaultValue: Any? {
-        return _properties[VLCFilterParameterPropertyDefaultValueKey]
-       }
+        return _properties[kVLCFilterParameterPropertyDefaultValueKey]
+    }
 
     public var minValue: Any? {
-        return _properties[VLCFilterParameterPropertyMinValueKey]
-       }
+        return _properties[kVLCFilterParameterPropertyMinValueKey]
+    }
 
     public var maxValue: Any? {
-        return _properties[VLCFilterParameterPropertyMaxValueKey]
-       }
+        return _properties[kVLCFilterParameterPropertyMaxValueKey]
+    }
 
     public func isValueSetToDefault() -> Bool {
-        let currentValue = (_properties[VLCFilterParameterPropertyValueKey] as? NSNumber)?.floatValue ?? 0.0
-        let defaultValue = (_properties[VLCFilterParameterPropertyDefaultValueKey] as? NSNumber)?.floatValue ?? 0.0
-        return currentValue == defaultValue
-       }
+        let currentValue = (_properties[kVLCFilterParameterPropertyValueKey] as? NSNumber)?.floatValue ?? 0.0
+        let defValue = (_properties[kVLCFilterParameterPropertyDefaultValueKey] as? NSNumber)?.floatValue ?? 0.0
+        return currentValue == defValue
+    }
 
     public var valueChangeAction: ((Any) -> Void)? {
         get {
-            guard let action = _properties[VLCFilterParameterPropertyValueChangeActionKey] as? ((Any) -> Void) else {
-                return nil
-             }
-            return action
-          }
+            return _properties[kVLCFilterParameterPropertyValueChangeActionKey] as? ((Any) -> Void)
+        }
         set {
-             _properties[VLCFilterParameterPropertyValueChangeActionKey] = newValue
-          }
-       }
+            _properties[kVLCFilterParameterPropertyValueChangeActionKey] = newValue
+        }
+    }
 
-    public override func setValue(_ value: Any) {
-        guard let valueNumber = value as? NSNumber else {
-            NSException(name: .unexpectedParameter, reason: "Can't call [value floatValue] from [VLCFilterParameter setValue:]", userInfo: nil).raise()
-            return
-         }
-
-        let newValue = valueNumber.floatValue
-        let currentValue = (_properties[VLCFilterParameterPropertyValueKey] as? NSNumber)?.floatValue ?? 0.0
+    public func setValue(_ value: NSNumber) {
+        let newValue = value.floatValue
+        let currentValue = (_properties[kVLCFilterParameterPropertyValueKey] as? NSNumber)?.floatValue ?? 0.0
 
         guard newValue != currentValue else { return }
 
-        let maxValue = (_properties[VLCFilterParameterPropertyMaxValueKey] as? NSNumber)?.floatValue ?? 0.0
-        let minValue = (_properties[VLCFilterParameterPropertyMinValueKey] as? NSNumber)?.floatValue ?? 0.0
+        let maxVal = (_properties[kVLCFilterParameterPropertyMaxValueKey] as? NSNumber)?.floatValue ?? Float.greatestFiniteMagnitude
+        let minVal = (_properties[kVLCFilterParameterPropertyMinValueKey] as? NSNumber)?.floatValue ?? -Float.greatestFiniteMagnitude
 
-        let clampedValue = newValue.clamped(to: minValue...maxValue)
+        let clampedValue = min(max(newValue, minVal), maxVal)
 
-         _properties[VLCFilterParameterPropertyValueKey] = NSNumber(value: clampedValue)
+        _properties[kVLCFilterParameterPropertyValueKey] = NSNumber(value: clampedValue)
 
-        if let action = _properties[VLCFilterParameterPropertyValueChangeActionKey] as? ((Any) -> Void) {
-            action(self.value)
-         }
-       }
+        if let action = _properties[kVLCFilterParameterPropertyValueChangeActionKey] as? ((Any) -> Void) {
+            action(NSNumber(value: clampedValue))
+        }
+    }
 }
 
 /**
  VLCFilter - Filter base class
  */
-public final class VLCFilter: NSObject {
+public class VLCFilter: NSObject {
 
     public var name: String = ""
     public var enabled: Bool = false
 
-      /**
-     Create a new filter
-       */
     public override init() {
         super.init()
-       }
+    }
 
     public init(name: String, enabled: Bool) {
-         self.name = name
-         self.enabled = enabled
+        self.name = name
+        self.enabled = enabled
         super.init()
-       }
+    }
 
     public func setEnabled(_ enabled: Bool) {
-         self.enabled = enabled
-       }
+        self.enabled = enabled
+    }
 
     public func reset() {
-         enabled = false
-       }
+        enabled = false
+    }
 }
 
 // MARK: - Constants
@@ -125,17 +114,3 @@ public let kVLCFilterParameterPropertyValueKey = "Value"
 public let kVLCFilterParameterPropertyMinValueKey = "MinValue"
 public let kVLCFilterParameterPropertyMaxValueKey = "MaxValue"
 public let kVLCFilterParameterPropertyValueChangeActionKey = "ValueChangeAction"
-
-// MARK: - Extension
-
-extension RangeReplaceableCollection where Index == Int {
-    func clamped(to range: ClosedRange<Bound>) -> [Bound] {
-        return map { min(max($0, range.lowerBound), range.upperBound) }
-      }
-}
-
-extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
-        return min(max(self, range.lowerBound), range.upperBound)
-      }
-}

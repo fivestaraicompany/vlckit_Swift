@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CLibVLC
 
 /**
  Protocol for receiving log messages from VLCLibrary
@@ -13,6 +14,9 @@ import Foundation
 public protocol VLCLogging {
     /// The logging level (0=info, 1=error, 2=warning, 3-4=debug)
     var level: Int { get set }
+
+    /// Handle a log message
+    func handleMessage(_ message: String, debugLevel level: Int)
 }
 
 /**
@@ -20,9 +24,6 @@ public protocol VLCLogging {
  */
 public protocol VLCLibraryLogReceiverProtocol {
     /// Handle a log message
-    /// - Parameters:
-    ///    - message: The log message
-    ///    - level: The log level
     func handleMessage(_ message: String, debugLevel level: Int)
 }
 
@@ -30,9 +31,8 @@ public protocol VLCLibraryLogReceiverProtocol {
  Protocol for configuring events
  */
 public protocol VLCEventsConfiguring {
-    /// Handle an event
-    /// - Parameter block: The event handler block
-    func handleEvent(_ block: @escaping (NSObject) -> Void)
+    var dispatchQueue: DispatchQueue? { get }
+    var isAsync: Bool { get }
 }
 
 /**
@@ -56,12 +56,10 @@ public final class VLCLibrary: NSObject {
             guard let instance = instance else { return }
 
             libvlc_log_unset(instance)
-            DispatchQueue.global(qos: .userInitiated).async {
-                self.loggers?.enumerated().forEach { (idx, logger) in
-                    if logger.level >= 0 {
-                        libvlc_log_set(instance, VLCLibrary.logHandler, UnsafeMutableRawPointer(Unmanaged.passRetained(self).toOpaque()))
-                    }
-                }
+            if let loggers = loggers, !loggers.isEmpty {
+                libvlc_log_set(instance, { data, level, ctx, fmt, args in
+                    VLCLibrary.logHandler(data, Int(level), ctx, fmt, args)
+                }, Unmanaged.passUnretained(self).toOpaque())
             }
         }
     }
@@ -70,7 +68,7 @@ public final class VLCLibrary: NSObject {
     @available(*, deprecated, message: "Set loggers with setLoggers() instead")
     public var debugLogging: Bool {
         get {
-            return loggers?.count ?? 0 > 0
+            return (loggers?.count ?? 0) > 0
         }
         set {
             self.loggers = newValue ? [VLCConsoleLogger()] : nil
@@ -121,12 +119,24 @@ public final class VLCLibrary: NSObject {
     private func prepareInstance(with options: [String]?) {
         let allOptions = options ?? defaultOptions
 
-        let cStrings = allOptions.map { $0.cString(using: .ascii) ?? "" }
-        let unsafeStrings = cStrings.map { UnsafePointer($0) }
+        // Create C string array for libvlc_new
+        var cStrings = allOptions.map { strdup($0) }
+        let argc = Int32(cStrings.count)
 
-        instance = libvlc_new(unsafeStrings.count, unsafeStrings)
+        instance = cStrings.withUnsafeMutableBufferPointer { buffer -> OpaquePointer? in
+            // Convert [UnsafeMutablePointer<CChar>?] to [UnsafePointer<CChar>?]
+            var constPtrs = buffer.map { UnsafePointer($0) }
+            return constPtrs.withUnsafeMutableBufferPointer { constBuffer in
+                return libvlc_new(argc, constBuffer.baseAddress)
+            }
+        }
 
-        guard let instance = instance else {
+        // Free the C strings
+        for ptr in cStrings {
+            free(ptr)
+        }
+
+        guard instance != nil else {
             fatalError("libvlc failed to initialize")
         }
     }
@@ -136,7 +146,7 @@ public final class VLCLibrary: NSObject {
             return vlcParams
         }
 
-    #if TARGET_OS_IPHONE
+    #if os(iOS)
         return [
             "--no-color",
             "--no-osd",
@@ -213,22 +223,20 @@ public final class VLCLibrary: NSObject {
         return true
     }
 
-    private static func logHandler(_ data: UnsafeMutableRawPointer?, _ level: Int, _ ctx: UnsafePointer<libvlc_log_t>?, _ fmt: UnsafePointer<CChar>?, _ args: OpaquePointer?) {
-        let library = Unmanaged<VLCLibrary>.fromOpaque(data!).takeUnretainedValue()
+    private static func logHandler(_ data: UnsafeMutableRawPointer?, _ level: Int, _ ctx: OpaquePointer?, _ fmt: UnsafePointer<CChar>?, _ args: CVaListPointer?) {
+        guard let data = data else { return }
+        let library = Unmanaged<VLCLibrary>.fromOpaque(data).takeUnretainedValue()
 
-        var messageStr: UnsafeMutablePointer<CChar>?
-        let len = vasprintf(&messageStr, fmt, args)
+        guard let fmt = fmt else { return }
 
-        guard len >= 0, let messageStr = messageStr else {
-            return
+        // Format the message using vsnprintf
+        var buffer = [CChar](repeating: 0, count: 512)
+        if let args = args {
+            vsnprintf(&buffer, buffer.count, fmt, args)
         }
+        let message = String(cString: buffer)
 
-        let message = String(cString: messageStr)
-        messageStr.deallocate()
-
-        let logLevel: VLCLogLevel = VLCLogLevel(rawValue: level) ?? .debug
-
-        let context: VLCLogContext = VLCLogContext(log: ctx)
+        let logLevel = VLCLogLevel(rawValue: level) ?? .debug
 
         DispatchQueue.global(qos: .userInitiated).async {
             library.loggers?.forEach { logger in
@@ -251,51 +259,29 @@ public enum VLCLogLevel: Int {
 // MARK: - External Logger
 private final class VLCExternalLogger: NSObject, VLCLogging {
     private var _target: (any VLCLibraryLogReceiverProtocol)?
-    private var _level: Int = 0
 
-    public var target: (any VLCLibraryLogReceiverProtocol)? {
-        get { return _target }
-        set { _target = newValue }
-    }
+    public var level: Int = 0
 
-    public var level: Int {
-        get { return _level }
-        set { _level = newValue }
-    }
-
-    public init(target: (any VLCLibraryLogReceiverProtocol)) {
+    public init(target: any VLCLibraryLogReceiverProtocol) {
         self._target = target
-        self._level = 0
         super.init()
     }
 
     public func handleMessage(_ message: String, debugLevel level: Int) {
-        target?.handleMessage(message, debugLevel: level)
+        _target?.handleMessage(message, debugLevel: level)
     }
 }
 
 // MARK: - Log Context
 public final class VLCLogContext: NSObject {
-    public var objectId: UInt = 0
-    public var objectType: String?
     public var module: String?
+    public var objectType: String?
     public var header: String?
     public var file: String?
     public var line: Int = 0
     public var function: String?
-    public var threadId: UInt = 0
 
-    public convenience init(log ctx: UnsafePointer<libvlc_log_t>?) {
-        self.init()
-        guard let ctx = ctx else { return }
-
-        self.objectId = ctx.pointee.i_object_id
-        self.objectType = ctx.pointee.psz_object_type != nil ? String(cString: ctx.pointee.psz_object_type!) : nil
-        self.module = ctx.pointee.psz_module != nil ? String(cString: ctx.pointee.psz_module!) : nil
-        self.header = ctx.pointee.psz_header != nil ? String(cString: ctx.pointee.psz_header!) : nil
-        self.file = ctx.pointee.file != nil ? String(cString: ctx.pointee.file!) : nil
-        self.line = ctx.pointee.line
-        self.function = ctx.pointee.func != nil ? String(cString: ctx.pointee.func!) : nil
-        self.threadId = ctx.pointee.tid
+    public override init() {
+        super.init()
     }
 }

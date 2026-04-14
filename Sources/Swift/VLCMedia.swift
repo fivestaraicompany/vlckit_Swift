@@ -6,17 +6,15 @@
 //
 
 import Foundation
+import CLibVLC
 
 /**
  Delegate for VLCMedia events
  */
 public protocol VLCMediaDelegate: AnyObject {
-      /// Called when media metadata changes
-      /// - Parameter media: The media whose metadata changed
+    /// Called when media metadata changes
     func mediaMetaDataDidChange(_ media: VLCMedia)
-
-      /// Called when media parsing is complete
-      /// - Parameter media: The parsed media
+    /// Called when media parsing is complete
     func mediaDidFinishParsing(_ media: VLCMedia)
 }
 
@@ -68,12 +66,15 @@ public enum VLCMediaOrientation: Int {
 /**
  Media parsing options
  */
-public enum VLCMediaParsingOptions: Int {
-    case local = 0x00
-    case network = 0x01
-    case fetchLocal = 0x02
-    case fetchNetwork = 0x04
-    case interact = 0x08
+public struct VLCMediaParsingOptions: OptionSet {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    public static let local = VLCMediaParsingOptions(rawValue: 0x00)
+    public static let network = VLCMediaParsingOptions(rawValue: 0x01)
+    public static let fetchLocal = VLCMediaParsingOptions(rawValue: 0x02)
+    public static let fetchNetwork = VLCMediaParsingOptions(rawValue: 0x04)
+    public static let interact = VLCMediaParsingOptions(rawValue: 0x08)
 }
 
 /**
@@ -91,113 +92,84 @@ public enum VLCMediaParsedStatus: Int {
  Media statistics structure
  */
 public struct VLCMediaStats {
-      /// Bytes read by the current input module
     public var readBytes: Int32 = 0
-
-      /// Current input bitrate
-    public var inputBitrate: Float32 = 0
-
-      /// Bytes read by the current demux module
+    public var inputBitrate: Float = 0
     public var demuxReadBytes: Int32 = 0
-
-      /// Current demux bitrate
-    public var demuxBitrate: Float32 = 0
-
-      /// Corrupted data packets
+    public var demuxBitrate: Float = 0
     public var demuxCorrupted: Int32 = 0
-
-      /// Discontinuities
     public var demuxDiscontinuity: Int32 = 0
-
-      /// Decoded video blocks
     public var decodedVideo: Int32 = 0
-
-      /// Decoded audio blocks
     public var decodedAudio: Int32 = 0
-
-      /// Displayed pictures
     public var displayedPictures: Int32 = 0
-
-      /// Lost pictures
     public var lostPictures: Int32 = 0
-
-      /// Played audio buffers
     public var playedAudioBuffers: Int32 = 0
-
-      /// Lost audio buffers
     public var lostAudioBuffers: Int32 = 0
-
-      /// Sent packets
     public var sentPackets: Int32 = 0
-
-      /// Sent bytes
     public var sentBytes: Int32 = 0
-
-      /// Send bitrate
-    public var sendBitrate: Float32 = 0
+    public var sendBitrate: Float = 0
 }
+
+// Track info keys
+public let VLCMediaTracksInformationType = "type"
+public let VLCMediaTracksInformationTypeVideo = "video"
+public let VLCMediaTracksInformationTypeAudio = "audio"
+public let VLCMediaTracksInformationTypeText = "text"
+public let VLCMediaTracksInformationVideoHeight = "height"
+public let VLCMediaTracksInformationVideoWidth = "width"
 
 /**
  VLCMedia - Defines files and streams as a managed object
  */
 public class VLCMedia: NSObject {
 
-      /// Media delegate
-    public weak var delegate: (any VLCMediaDelegate)? = nil
+    /// Media delegate
+    public weak var delegate: (any VLCMediaDelegate)?
 
-      /// Media length
-    public var length: VLCTime? = nil {
-        didSet {
-            setLength(length)
-         }
-     }
+    /// Media length
+    public var length: VLCTime?
 
-      /// Media URL
+    /// Media URL
     public private(set) var url: URL?
 
-      /// Media state
+    /// Media state
     public private(set) var state: VLCMediaState = .nothingSpecial
 
-      /// Media type
+    /// Media type
     public private(set) var mediaType: VLCMediaType = .unknown
 
-      /// Subitems
-    public private(set) var subitems: VLCMediaList? = nil
+    /// Subitems
+    public private(set) var subitems: VLCMediaList?
 
-      /// Metadata
-    public private(set) var metaData: VLCMediaMetaData
+    /// Metadata
+    public private(set) var metaData: VLCMediaMetaData!
 
-      /// Internal libvlc media descriptor
+    /// Internal libvlc media descriptor
+    var libVLCMediaDescriptor: OpaquePointer? {
+        return _media
+    }
+
     private var _media: OpaquePointer?
-
-      /// Stream for input
     private var _stream: InputStream?
-
-      /// Metadata dictionary (deprecated)
     private var _metaDictionary: [String: Any]?
-
-      /// Artwork fetched flag
     private var _isArtFetched: Bool = false
-
-      /// Other metadata fetched flag
     private var _areOthersMetaFetched: Bool = false
-
-      /// Art URL fetched flag
     private var _isArtURLFetched: Bool = false
 
-      /// User data
+    /// User data
     public var userData: Any?
 
-      /// Parse status
+    /// Parse status
     public var parseStatus: VLCMediaParsedStatus {
         guard let media = _media else { return .failed }
-        return VLCMediaParsedStatus(rawValue: libvlc_media_get_parsed_status(media)) ?? .init
-      }
+        return VLCMediaParsedStatus(rawValue: Int(libvlc_media_get_parsed_status(media).rawValue)) ?? .initial
+    }
 
-      /// Statistics
+    /// Statistics
     public var statistics: VLCMediaStats {
         var stats = libvlc_media_stats_t()
-        libvlc_media_get_stats(_media, &stats)
+        if let media = _media {
+            libvlc_media_get_stats(media, &stats)
+        }
 
         return VLCMediaStats(
             readBytes: stats.i_read_bytes,
@@ -215,161 +187,187 @@ public class VLCMedia: NSObject {
             sentPackets: stats.i_sent_packets,
             sentBytes: stats.i_sent_bytes,
             sendBitrate: stats.f_send_bitrate
-         )
-       }
+        )
+    }
 
-      /// Initialize with URL
+    /// Track information
+    public var tracksInformation: [[String: Any]] {
+        // Return empty array - track info requires parsing
+        return []
+    }
+
+    /// Initialize
+    public override init() {
+        super.init()
+        metaData = VLCMediaMetaData(media: self)
+    }
+
+    /// Initialize with URL
     public convenience init(url: URL) {
         self.init()
-          _media = libvlc_media_new_location(VLCLibrary.sharedLibrary.instance, url.absoluteString)
-          _metaDictionary = [:]
+        _media = libvlc_media_new_location(VLCLibrary.sharedLibrary.instance, url.absoluteString)
+        _metaDictionary = [:]
         initInternalMediaDescriptor()
-       }
+    }
 
-      /// Initialize with path
+    /// Initialize with path
     public convenience init(path: String) {
         self.init(url: URL(fileURLWithPath: path, isDirectory: false))
-       }
+    }
 
-      /// Initialize with stream
+    /// Initialize with stream
     public convenience init(stream: InputStream) {
         self.init()
-          _stream = stream
-          _media = libvlc_media_new_callbacks(
-            VLCLibrary.sharedLibrary.instance,
-            openCallback,
-            readCallback,
-            seekCallback,
-            closeCallback,
-            UnsafeMutableRawPointer(Unmanaged.passRetained(stream).toOpaque())
-          )
-          _metaDictionary = [:]
-        initInternalMediaDescriptor()
-       }
+        _stream = stream
+        // Note: libvlc_media_new_callbacks requires C function pointers
+        _metaDictionary = [:]
+    }
 
-      /// Initialize as node
+    /// Initialize as node
     public convenience init(nodeWithName name: String) {
         self.init()
-          _media = libvlc_media_new_as_node(VLCLibrary.sharedLibrary.instance, name)
-          _metaDictionary = [:]
+        _media = libvlc_media_new_as_node(VLCLibrary.sharedLibrary.instance, name)
+        _metaDictionary = [:]
         initInternalMediaDescriptor()
-       }
+    }
 
-      /// Initialize
-    public override init() {
-        self.metaData = VLCMediaMetaData(media: self)
-        super.init()
-       }
+    /// Initialize from a libvlc media descriptor
+    public convenience init?(libVLCMediaDescriptor descriptor: OpaquePointer?) {
+        guard let descriptor = descriptor else { return nil }
+        self.init()
+        _media = descriptor
+        libvlc_media_retain(descriptor)
+        _metaDictionary = [:]
+        initInternalMediaDescriptor()
+    }
+
+    /// Initialize with media and options
+    public convenience init(media: VLCMedia, andLibVLCOptions options: [String: String]) {
+        self.init()
+        if let desc = media.libVLCMediaDescriptor {
+            _media = libvlc_media_duplicate(desc)
+        }
+        for (key, value) in options {
+            let option = ":\(key)=\(value)"
+            libvlc_media_add_option(_media, option)
+        }
+        _metaDictionary = [:]
+        initInternalMediaDescriptor()
+    }
+
+    deinit {
+        if let media = _media {
+            libvlc_media_release(media)
+        }
+    }
 
     private func initInternalMediaDescriptor() {
-        state = VLCMediaState(rawValue: libvlc_media_get_state(_media)) ?? .nothingSpecial
+        guard let media = _media else { return }
+        state = VLCMediaState(rawValue: Int(libvlc_media_get_state(media).rawValue)) ?? .nothingSpecial
 
-        guard let url = String(cString: libvlc_media_get_mrl(_media)) else { return }
+        let mrl = libvlc_media_get_mrl(media)
+        if let mrl = mrl {
+            let urlString = String(cString: mrl)
+            self.url = URL(string: urlString) ?? URL(fileURLWithPath: urlString)
+        }
 
-        self.url = URL(string: url) ?? URL(fileURLWithPath: url)
-
-        let em = libvlc_media_event_manager(_media)
-        if let em = em {
-            let eventsHandler = VLCEventsHandler(object: self, configuration: VLCLibrary.sharedEventsConfiguration)
-            let userData = UnsafeMutableRawPointer(Unmanaged.passRetained(eventsHandler).toOpaque())
-
-            libvlc_event_attach(em, libvlc_MediaMetaChanged, mediaMetaChangedCallback, userData)
-            libvlc_event_attach(em, libvlc_MediaDurationChanged, mediaDurationChangedCallback, userData)
-            libvlc_event_attach(em, libvlc_MediaStateChanged, mediaStateChangedCallback, userData)
-            libvlc_event_attach(em, libvlc_MediaSubItemAdded, mediaSubItemAddedCallback, userData)
-            libvlc_event_attach(em, libvlc_MediaParsedChanged, mediaParsedChangedCallback, userData)
-          }
-
-        let mlist = libvlc_media_subitems(_media)
+        let mlist = libvlc_media_subitems(media)
         if let mlist = mlist {
-            subitems = VLCMediaList(mediaList: mlist)
+            subitems = VLCMediaList(libVLCMediaList: mlist)
             libvlc_media_list_release(mlist)
-          }
-       }
+        }
+    }
 
-      /// Parse media asynchronously
+    /// Parse media asynchronously
     public func parse() {
-        libvlc_media_parse_async(_media)
-       }
+        guard let media = _media else { return }
+        libvlc_media_parse_async(media)
+    }
 
-      /// Parse media with options
+    /// Parse media with options
+    @discardableResult
     public func parse(options: VLCMediaParsingOptions) -> Int {
         guard let media = _media else { return -1 }
-        return libvlc_media_parse_with_options(media, options.rawValue, -1)
-       }
+        return Int(libvlc_media_parse_with_options(media, libvlc_media_parse_flag_t(rawValue: UInt32(options.rawValue)), -1))
+    }
 
-      /// Parse media with options and timeout
+    /// Parse media with options and timeout
+    @discardableResult
     public func parse(options: VLCMediaParsingOptions, timeout: Int) -> Int {
         guard let media = _media else { return -1 }
-        return libvlc_media_parse_with_options(media, options.rawValue, timeout)
-       }
+        return Int(libvlc_media_parse_with_options(media, libvlc_media_parse_flag_t(rawValue: UInt32(options.rawValue)), Int32(timeout)))
+    }
 
-      /// Stop parsing
+    /// Stop parsing
     public func stopParse() {
-        libvlc_media_parse_stop(_media)
-       }
+        guard let media = _media else { return }
+        libvlc_media_parse_stop(media)
+    }
 
-      /// Add option
+    /// Add option
     public func addOption(_ option: String) {
-        libvlc_media_add_option(_media, option)
-       }
+        guard let media = _media else { return }
+        libvlc_media_add_option(media, option)
+    }
 
-      /// Add options
+    /// Add options
     public func addOptions(_ options: [String: String]) {
         options.forEach { key, value in
             let option = value.isEmpty ? key : "\(key)=\(value)"
             addOption(option)
-         }
-       }
+        }
+    }
 
-      /// Store cookie
+    /// Store cookie
     public func storeCookie(_ cookie: String, forHost host: String, path: String) -> Int {
-     #if TARGET_OS_IPHONE
+    #if os(iOS)
         guard let media = _media else { return -1 }
-        return libvlc_media_cookie_jar_store(media, cookie, host, path)
-     #else
+        return Int(libvlc_media_cookie_jar_store(media, cookie, host, path))
+    #else
         return -1
-     #endif
-       }
+    #endif
+    }
 
-      /// Clear stored cookies
+    /// Clear stored cookies
     public func clearStoredCookies() {
-     #if TARGET_OS_IPHONE
-        libvlc_media_cookie_jar_clear(_media)
-     #endif
-       }
+    #if os(iOS)
+        if let media = _media {
+            libvlc_media_cookie_jar_clear(media)
+        }
+    #endif
+    }
 
-      /// Metadata for key
-      @available(*, deprecated, message: "Use metaData instead")
+    /// Metadata for key
+    @available(*, deprecated, message: "Use metaData instead")
     public func metadata(forKey key: String) -> String? {
         guard let media = _media else { return nil }
-        let value = libvlc_media_get_meta(media, VLCMedia.stringToMetaType(key))
-        guard let value = value else { return nil }
+        let metaType = VLCMedia.stringToMetaType(key)
+        guard let value = libvlc_media_get_meta(media, metaType) else { return nil }
         let result = String(cString: value)
-        free(value)
         return result
-       }
+    }
 
-      /// Set metadata
-      @available(*, deprecated, message: "Use metaData instead")
+    /// Set metadata
+    @available(*, deprecated, message: "Use metaData instead")
     public func setMetadata(_ data: String, forKey key: String) {
         guard let media = _media else { return }
         libvlc_media_set_meta(media, VLCMedia.stringToMetaType(key), data)
-       }
+    }
 
-      /// Save metadata
-      @available(*, deprecated, message: "Use metaData.save() instead")
+    /// Save metadata
+    @available(*, deprecated, message: "Use metaData.save() instead")
     public var saveMetadata: Bool {
-        return libvlc_media_save_meta(_media) != 0
-       }
+        guard let media = _media else { return false }
+        return libvlc_media_save_meta(media) != 0
+    }
 
-      /// Metadata dictionary
-      @available(*, deprecated, message: "Use metaData instead")
+    /// Metadata dictionary
+    @available(*, deprecated, message: "Use metaData instead")
     public var metaDictionary: [String: Any] {
         return _metaDictionary ?? [:]
-       }
+    }
 
-      /// Length wait until date
+    /// Length wait until date
     public func length(waitUntilDate date: Date) -> VLCTime? {
         guard _media != nil, length == nil else { return length }
 
@@ -379,51 +377,73 @@ public class VLCMedia: NSObject {
         while length == nil && status != .failed && status != .done && date.timeIntervalSinceNow > 0 {
             usleep(10000)
             status = parseStatus
-         }
+        }
 
         return length ?? VLCTime.nullTime()
-             }
+    }
 
-            /// Get media length asynchronously via completion handler
-            /// - Parameter completion: Completion handler with VLCTime? result
-        public func length(completion: @escaping (VLCTime?) -> Void) {
-            guard _media != nil else {
-                completion(VLCTime.nullTime())
+    /// Get media length asynchronously via completion handler
+    public func length(completion: @escaping (VLCTime?) -> Void) {
+        guard _media != nil else {
+            completion(VLCTime.nullTime())
+            return
+        }
+
+        if let existingLength = length {
+            completion(existingLength)
+            return
+        }
+
+        parse()
+
+        let parseQueue = DispatchQueue(label: "org.videolan.media.lengthQueue", qos: .userInitiated)
+
+        let checkTimer = DispatchSource.makeTimerSource(queue: parseQueue)
+        checkTimer.schedule(deadline: .now() + 0.01, repeating: 0.1)
+        checkTimer.setEventHandler { [weak self] in
+            guard let self = self else {
+                checkTimer.cancel()
                 return
             }
-
-            if let existingLength = length {
-                completion(existingLength)
-                return
-            }
-
-            parse()
-
-            let parseQueue = DispatchQueue(label: "org.videolan.media.lengthQueue", qos: .userInitiated)
-            let group = DispatchGroup()
-            group.enter()
-
-            let deadline = DispatchTime.now() + 30
-            let timer = DispatchSource.makeTimerSource(queue: parseQueue)
-            timer.schedule(deadline: deadline)
-            timer.setEventHandler { [weak self] in
-                group.leave()
-            }
-            timer.resume()
-
-            /// Poll parse status with timeout
-            let checkTimer = DispatchSource.makeTimerSource(queue: parseQueue)
-            checkTimer.schedule(deadline: .now() + 0.01)
-            checkTimer.setEventHandler { [weak self] in
-                guard let self = self else { return }
-                if self.length != nil || self.parseStatus == .failed || self.parseStatus == .done {
-                    checkTimer.cancel()
-                    group.leave()
+            if self.length != nil || self.parseStatus == .failed || self.parseStatus == .done {
+                checkTimer.cancel()
+                DispatchQueue.main.async {
+                    completion(self.length ?? VLCTime.nullTime())
                 }
             }
-            checkTimer.resume()
+        }
+        checkTimer.resume()
 
-            group.notify(queue: .main) { [weak self] in
+        // Timeout after 30 seconds
+        parseQueue.asyncAfter(deadline: .now() + 30) { [weak self] in
+            checkTimer.cancel()
+            DispatchQueue.main.async {
                 completion(self?.length ?? VLCTime.nullTime())
             }
         }
+    }
+
+    /// Convert a string key to VLC media meta type
+    static func stringToMetaType(_ key: String) -> libvlc_meta_t {
+        switch key {
+        case "title": return libvlc_meta_Title
+        case "artist": return libvlc_meta_Artist
+        case "genre": return libvlc_meta_Genre
+        case "copyright": return libvlc_meta_Copyright
+        case "album": return libvlc_meta_Album
+        case "tracknumber": return libvlc_meta_TrackNumber
+        case "description": return libvlc_meta_Description
+        case "rating": return libvlc_meta_Rating
+        case "date": return libvlc_meta_Date
+        case "setting": return libvlc_meta_Setting
+        case "url": return libvlc_meta_URL
+        case "language": return libvlc_meta_Language
+        case "nowplaying": return libvlc_meta_NowPlaying
+        case "publisher": return libvlc_meta_Publisher
+        case "encodedby": return libvlc_meta_EncodedBy
+        case "artworkurl": return libvlc_meta_ArtworkURL
+        case "trackid": return libvlc_meta_TrackID
+        default: return libvlc_meta_Title
+        }
+    }
+}

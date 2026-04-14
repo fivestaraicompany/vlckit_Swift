@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import CLibVLC
 
 /**
  VLCRendererItem - Renderer item for VLC
@@ -17,39 +18,34 @@ public class VLCRendererItem: NSObject {
     public private(set) var name: String = ""
     public private(set) var type: String = ""
     public private(set) var iconURI: String = ""
-    public private(set) var flags: UInt32 = 0
+    public private(set) var flags: Int32 = 0
 
-    /**
-     Create a new renderer item
-     */
+    /// Access the underlying libvlc renderer item
+    public var libVLCRendererItem: OpaquePointer? {
+        return _rendererItem
+    }
+
     public override init() {
         super.init()
     }
 
-    /**
-     Initialize with a renderer item
-
-     - Parameter item: The renderer item instance
-     - Returns: A new renderer item instance
-     */
     public init?(rendererItem: OpaquePointer?) {
         guard let item = rendererItem else {
-            NSAssert(false, "Renderer item is NULL")
             return nil
         }
 
         _rendererItem = libvlc_renderer_item_hold(item)
 
-         name = String(cString: libvlc_renderer_item_name(_rendererItem))
-         NSAssert(!name.isEmpty, "VLCRendererItem: name is NULL")
-
-         type = String(cString: libvlc_renderer_item_type(_rendererItem))
-         NSAssert(!type.isEmpty, "VLCRendererItem: type is NULL")
-
-         iconURI = String(cString: libvlc_renderer_item_icon_uri(_rendererItem))
-         NSAssert(!iconURI.isEmpty, "VLCRendererItem: iconURI is NULL")
-
-         flags = libvlc_renderer_item_flags(_rendererItem)
+        if let namePtr = libvlc_renderer_item_name(_rendererItem) {
+            name = String(cString: namePtr)
+        }
+        if let typePtr = libvlc_renderer_item_type(_rendererItem) {
+            type = String(cString: typePtr)
+        }
+        if let iconPtr = libvlc_renderer_item_icon_uri(_rendererItem) {
+            iconURI = String(cString: iconPtr)
+        }
+        flags = libvlc_renderer_item_flags(_rendererItem)
 
         super.init()
     }
@@ -61,10 +57,6 @@ public class VLCRendererItem: NSObject {
     }
 
     public override var description: String {
-        return "\(type(of: self)) - name: \(name) type: \(type) flags: \(flags)"
-    }
-
-    public func libVLCRendererItem() -> OpaquePointer? {
-        return _rendererItem
+        return "\(Swift.type(of: self)) - name: \(name) type: \(type) flags: \(flags)"
     }
 }

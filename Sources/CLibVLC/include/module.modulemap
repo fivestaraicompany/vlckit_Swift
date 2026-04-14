@@ -1,0 +1,5 @@
+module CLibVLC {
+    umbrella header "CLibVLC.h"
+    export *
+    module * { export * }
+}

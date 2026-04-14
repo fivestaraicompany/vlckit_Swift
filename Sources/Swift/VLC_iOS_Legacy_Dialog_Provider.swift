@@ -2,247 +2,112 @@
 //  VLCiOSLegacyDialogProvider.swift
 //  VLCKit
 //
-//  VLCiOSLegacyDialogProvider - iOS legacy dialog provider for iOS 7
+//  VLCiOSLegacyDialogProvider - iOS legacy dialog provider
+//  Note: UIAlertView is deprecated. This file is kept for API compatibility
+//  but uses UIAlertController internally on modern iOS.
 //
 
 import Foundation
+import CLibVLC
+#if canImport(UIKit) && !os(watchOS)
 import UIKit
 
 /**
- VLCiOSLegacyDialogProvider - iOS legacy dialog provider for iOS 7
+ VLCiOSLegacyDialogProvider - iOS legacy dialog provider
  */
 public class VLCiOSLegacyDialogProvider: VLCDialogProvider {
 
     private var _libraryInstance: VLCLibrary?
 
-    /**
-     Create a new iOS legacy dialog provider
-
-     - Parameter library: The library instance
-     - Returns: A new iOS legacy dialog provider instance
-     */
-    public convenience init?(library: VLCLibrary?) {
-        self.init()
-
-        let lib = library ?? VLCLibrary.sharedLibrary
-        _libraryInstance = lib
-
-        let cbs = libvlc_dialog_cbs(
-            displayErrorCallback: { p_data, psz_title, psz_text in
-                let dialogProvider = p_data.map { Unmanaged<VLCiOSLegacyDialogProvider>.from($0).takeUnretainedValue() } ?? return
-
-                let title = psz_title.map { String(cString: $0) } ?? ""
-                let text = psz_text.map { String(cString: $0) } ?? ""
-
-                DispatchQueue.main.async {
-                    dialogProvider.displayError([title, text])
-                  }
-              },
-            displayLoginCallback: { p_data, p_id, psz_title, psz_text, psz_default_username, b_ask_store in
-                let dialogProvider = p_data.map { Unmanaged<VLCiOSLegacyDialogProvider>.from($0).takeUnretainedValue() } ?? return
-
-                let title = psz_title.map { String(cString: $0) } ?? ""
-                let text = psz_text.map { String(cString: $0) } ?? ""
-                let username = psz_default_username.map { String(cString: $0) } ?? ""
-
-                DispatchQueue.main.async {
-                    dialogProvider.displayLoginDialog([
-                        NSValue(value: p_id),
-                        title,
-                        text,
-                        username,
-                        NSNumber(value: b_ask_store)
-                      ])
-                  }
-              },
-            displayQuestionCallback: { p_data, p_id, psz_title, psz_text, i_type, psz_cancel, psz_action1, psz_action2 in
-                let dialogProvider = p_data.map { Unmanaged<VLCiOSLegacyDialogProvider>.from($0).takeUnretainedValue() } ?? return
-
-                let title = psz_title.map { String(cString: $0) } ?? ""
-                let text = psz_text.map { String(cString: $0) } ?? ""
-                let cancel = psz_cancel.map { String(cString: $0) } ?? ""
-                let action1 = psz_action1.map { String(cString: $0) } ?? ""
-                let action2 = psz_action2.map { String(cString: $0) } ?? ""
-
-                DispatchQueue.main.async {
-                    dialogProvider.displayQuestion([
-                        NSValue(value: p_id),
-                        title,
-                        text,
-                        NSNumber(value: i_type),
-                        cancel,
-                        action1,
-                        action2
-                      ])
-                  }
-              },
-            displayProgressCallback: { p_data, p_id, psz_title, psz_text, b_indeterminate, f_position, psz_cancel in
-                let dialogProvider = p_data.map { Unmanaged<VLCiOSLegacyDialogProvider>.from($0).takeUnretainedValue() } ?? return
-
-                let title = psz_title.map { String(cString: $0) } ?? ""
-                let text = psz_text.map { String(cString: $0) } ?? ""
-                let cancel = psz_cancel.map { String(cString: $0) } ?? ""
-
-                DispatchQueue.main.async {
-                    dialogProvider.displayProgressDialog([
-                        NSValue(value: p_id),
-                        title,
-                        text,
-                        NSNumber(value: b_indeterminate),
-                        NSNumber(value: f_position),
-                        cancel
-                      ])
-                  }
-              },
-            cancelCallback: { p_data, p_id in
-                print("cancelCallback: %i", p_id)
-              },
-            updateProgressCallback: { p_data, p_id, f_position, psz_text in
-                let dialogProvider = p_data.map { Unmanaged<VLCiOSLegacyDialogProvider>.from($0).takeUnretainedValue() } ?? return
-
-                let text = psz_text.map { String(cString: $0) } ?? ""
-
-                DispatchQueue.main.async {
-                    dialogProvider.updateDisplayedProgressDialog([
-                        NSValue(value: p_id),
-                        NSNumber(value: f_position),
-                        text
-                      ])
-                  }
-              }
-          )
-
-        libvlc_dialog_set_callbacks(_libraryInstance?.instance, &cbs, Unmanaged.passRetained(self).toOpaque())
-
+    public init(library: VLCLibrary?) {
         super.init()
-      }
+        _libraryInstance = library ?? VLCLibrary.sharedLibrary
+    }
 
     deinit {
-        libvlc_dialog_set_callbacks(_libraryInstance?.instance, NULL, NULL)
-      }
+        if let instance = _libraryInstance?.instance {
+            libvlc_dialog_set_callbacks(instance, nil, nil)
+        }
+    }
 
-    private func displayError(_ dialogData: [String]) {
-        let alert = VLCBlockingAlertView(title: dialogData[0],
-                                          message: dialogData[1],
-                                          delegate: nil,
-                                          cancelButtonTitle: NSLocalizedString("OK", comment: ""),
-                                          otherButtonTitles: nil)
-        alert.completion = nil
-        alert.show()
-      }
+    private func displayError(title: String, text: String) {
+        DispatchQueue.main.async {
+            let alert = UIAlertController(title: title, message: text, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: NSLocalizedString("OK", comment: ""), style: .default))
+            self.presentAlert(alert)
+        }
+    }
 
-    private func displayLoginDialog(_ dialogData: [Any]) {
-        let otherTitles: [String] = [
-            NSLocalizedString("Login", comment: ""),
-             (dialogData[4] as? Bool ?? false) ? NSLocalizedString("Store", comment: "") : nil
-         ].compactMap { $0 }
+    private func displayLoginDialog(title: String, text: String, username: String?, askStore: Bool, dialogId: OpaquePointer?) {
+        DispatchQueue.main.async {
+            let alert = UIAlertController(title: title, message: text, preferredStyle: .alert)
 
-        let alert = VLCBlockingAlertView(title: dialogData[1] as? String ?? "",
-                                          message: dialogData[2] as? String ?? "",
-                                          delegate: nil,
-                                          cancelButtonTitle: NSLocalizedString("Cancel", comment: ""),
-                                          otherButtonTitles: otherTitles)
-        alert.alertViewStyle = .loginAndPasswordInput
+            var usernameField: UITextField?
+            var passwordField: UITextField?
 
-        var weakAlert: VLCBlockingAlertView?
-        alert.completion = { [weak self] cancelled, buttonIndex in
-            weakAlert = nil
-            if !cancelled {
-                let username = self?.textField(atIndex: 0).text ?? ""
-                let password = self?.textField(atIndex: 1).text ?? ""
-                libvlc_dialog_post_login(dialogData[0].asPointerValue,
-                                          username.isEmpty ? "" : username,
-                                          password.isEmpty ? "" : password,
-                                          buttonIndex != alert.firstOtherButtonIndex)
-              } else {
-                libvlc_dialog_dismiss(dialogData[0].asPointerValue)
-              }
-          }
-        alert.delegate = alert
-        alert.show()
-      }
+            alert.addTextField { tf in
+                usernameField = tf
+                tf.placeholder = NSLocalizedString("User", comment: "")
+                if let username = username, !username.isEmpty {
+                    tf.text = username
+                }
+            }
 
-    private func displayQuestion(_ dialogData: [Any]) {
-        let otherTitles: [String] = [
-            dialogData[4] as? String ?? nil,
-            dialogData[5] as? String ?? nil,
-            dialogData[6] as? String ?? nil
-         ].compactMap { $0 }
+            alert.addTextField { tf in
+                passwordField = tf
+                tf.isSecureTextEntry = true
+                tf.placeholder = NSLocalizedString("Password", comment: "")
+            }
 
-        let alert = VLCBlockingAlertView(title: dialogData[1] as? String ?? "",
-                                          message: dialogData[2] as? String ?? "",
-                                          delegate: nil,
-                                          cancelButtonTitle: dialogData[4] as? String ?? nil,
-                                          otherButtonTitles: otherTitles)
-        alert.completion = { cancelled, buttonIndex in
-            if cancelled {
-                libvlc_dialog_post_action(dialogData[0].asPointerValue, 3)
-              } else {
-                libvlc_dialog_post_action(dialogData[0].asPointerValue, Int(buttonIndex))
-              }
-          }
-        alert.delegate = alert
-        alert.show()
-      }
+            alert.addAction(UIAlertAction(title: NSLocalizedString("Login", comment: ""), style: .default) { _ in
+                let user = usernameField?.text ?? ""
+                let pass = passwordField?.text ?? ""
+                libvlc_dialog_post_login(dialogId,
+                                         user.isEmpty ? nil : user,
+                                         pass.isEmpty ? nil : pass,
+                                         false)
+            })
 
-    private func displayProgressDialog(_ dialogData: [Any]) {
-        print("displayProgressDialog: \(dialogData)")
-      }
+            alert.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .cancel) { _ in
+                libvlc_dialog_dismiss(dialogId)
+            })
 
-    private func updateDisplayedProgressDialog(_ dialogData: [Any]) {
-        print("updateDisplayedProgressDialog: \(dialogData)")
-      }
+            self.presentAlert(alert)
+        }
+    }
 
-    private func textField(atIndex index: Int) -> UITextField? {
-        return nil
-      }
+    private func displayQuestion(title: String, text: String, cancel: String?, action1: String?, action2: String?, dialogId: OpaquePointer?) {
+        DispatchQueue.main.async {
+            let alert = UIAlertController(title: title, message: text, preferredStyle: .alert)
+
+            if let cancel = cancel, !cancel.isEmpty {
+                alert.addAction(UIAlertAction(title: cancel, style: .cancel) { _ in
+                    libvlc_dialog_post_action(dialogId, 3)
+                })
+            }
+
+            if let action1 = action1, !action1.isEmpty {
+                alert.addAction(UIAlertAction(title: action1, style: .default) { _ in
+                    libvlc_dialog_post_action(dialogId, 1)
+                })
+            }
+
+            if let action2 = action2, !action2.isEmpty {
+                alert.addAction(UIAlertAction(title: action2, style: .default) { _ in
+                    libvlc_dialog_post_action(dialogId, 2)
+                })
+            }
+
+            self.presentAlert(alert)
+        }
+    }
+
+    private func presentAlert(_ alert: UIAlertController) {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootVC = windowScene.windows.first?.rootViewController else { return }
+        let presenter = rootVC.presentedViewController ?? rootVC
+        presenter.present(alert, animated: true)
+    }
 }
 
-/**
- VLCBlockingAlertView - Blocking alert view for iOS 7
- */
-public class VLCBlockingAlertView: UIAlertView {
-
-    public var completion: ((Bool, Int) -> Void)?
-    public var alertViewStyle: UIAlertViewStyle = .default
-    public var firstOtherButtonIndex: Int {
-        return cancelButtonIndex + 1
-      }
-
-    public convenience init(title: String,
-                            message: String,
-                            delegate: UIAlertViewDelegate?,
-                            cancelButtonTitle: String?,
-                            otherButtonTitles: [String]?) {
-        self.init(title: title, message: message, delegate: self, cancelButtonTitle: cancelButtonTitle ?? "", otherButtonTitles: otherButtonTitles ?? [])
-
-        if let otherButtonTitles = otherButtonTitles {
-            for buttonTitle in otherTitles {
-                addButton(title: buttonTitle)
-              }
-          }
-      }
-
-    public func show() {
-        show()
-      }
-
-    public func textField(atIndex index: Int) -> UITextField? {
-        return nil
-      }
-}
-
-// MARK: - Extension
-
-extension Any {
-    var asPointerValue: UnsafeMutableRawPointer? {
-        return self as? NSValue?.map { $0.pointerValue } ??
-               nil
-      }
-}
-
-extension UIAlertViewDelegate {
-    func alertView(_ alertView: UIAlertView, didDismissWithButtonIndex: Int) {
-          // No-op
-      }
-}
+#endif
