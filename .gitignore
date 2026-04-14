@@ -2,6 +2,7 @@
 *.mode*
 *.pbxuser
 xcuserdata
+./.build
 /.build
 /.claude
 project.xcworkspace
