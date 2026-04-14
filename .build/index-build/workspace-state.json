@@ -1,7 +1,26 @@
 {
   "object" : {
     "artifacts" : [
+      {
+        "kind" : {
+          "xcframework" : {
 
+          }
+        },
+        "packageRef" : {
+          "identity" : "vlckit_swift",
+          "kind" : "root",
+          "location" : "/Users/jgoh/vlckit_Swift",
+          "name" : "vlckit_Swift"
+        },
+        "path" : "/Users/jgoh/vlckit_Swift/.build/index-build/artifacts/vlckit_swift/MobileVLCKit/MobileVLCKit.xcframework",
+        "source" : {
+          "checksum" : "6e3d3ef2e36f397b70face072008942ebcc189f4d554258747a002aa236a9750",
+          "type" : "remote",
+          "url" : "https://github.com/fivestaraicompany/vlckit_Swift/releases/download/3.7.9/MobileVLCKit-3.7.8.xcframework.zip"
+        },
+        "targetName" : "MobileVLCKit"
+      }
     ],
     "dependencies" : [
 
