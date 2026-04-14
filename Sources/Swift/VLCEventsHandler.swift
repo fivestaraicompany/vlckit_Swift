@@ -10,7 +10,7 @@ import Foundation
 /**
  VLCEventsHandler - Events handler for libvlc callbacks
  */
-public class VLCEventsHandler: NSObject {
+public final class VLCEventsHandler: NSObject {
 
     private var _object: NSObject?
     private var _configuration: (any VLCEventsConfiguring)?

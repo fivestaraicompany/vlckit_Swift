@@ -38,7 +38,11 @@
       "Bash(cd:*)",
       "Bash(rm -rf ~/Library/Caches/org.swift.swiftpm)",
       "Bash(rm -rf .build Package.resolved)",
-      "Bash(zip -r -y /tmp/MobileVLCKit-3.7.8.xcframework.zip MobileVLCKit.xcframework)"
+      "Bash(zip -r -y /tmp/MobileVLCKit-3.7.8.xcframework.zip MobileVLCKit.xcframework)",
+      "Bash(cat Sources/*.swift)",
+      "Bash(mv VLCiOSLegacyDialogProvider.swift VLC_iOS_Legacy_Dialog_Provider.swift)",
+      "Bash(mv VLCLibVLCBridging.swift VLC_Lib_VLC_Bridging.swift)",
+      "Bash(mv VLCHelperCode.swift VLC_Helper_Code.swift)"
     ]
   }
 }

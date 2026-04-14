@@ -15,7 +15,7 @@ public let VLCMediaPlayerVolumeChanged = "VLCMediaPlayerVolumeChanged"
 /**
  Basic class to control audio output
  */
-public class VLCAudio: NSObject {
+public final class VLCAudio: NSObject {
 
     private var _playerInstance: OpaquePointer?
 

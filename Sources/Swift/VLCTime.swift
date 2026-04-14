@@ -10,7 +10,7 @@ import Foundation
 /**
  A time object for VLC media playback.
  */
-public class VLCTime: NSObject {
+public final class VLCTime: NSObject {
 
     private var _value: NSNumber?
 

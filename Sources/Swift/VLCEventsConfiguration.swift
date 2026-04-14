@@ -18,7 +18,7 @@ public protocol VLCEventsConfiguring {
 /**
  VLCEventsDefaultConfiguration - Default event configuration
  */
-public class VLCEventsDefaultConfiguration: NSObject, VLCEventsConfiguring {
+public final class VLCEventsDefaultConfiguration: NSObject, VLCEventsConfiguring {
 
     public var dispatchQueue: DispatchQueue? {
         return nil
@@ -32,7 +32,7 @@ public class VLCEventsDefaultConfiguration: NSObject, VLCEventsConfiguring {
 /**
  VLCEventsLegacyConfiguration - Legacy event configuration
  */
-public class VLCEventsLegacyConfiguration: NSObject, VLCEventsConfiguring {
+public final class VLCEventsLegacyConfiguration: NSObject, VLCEventsConfiguring {
 
     public var dispatchQueue: DispatchQueue? {
         return DispatchQueue.main

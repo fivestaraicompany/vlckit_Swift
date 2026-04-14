@@ -10,7 +10,7 @@ import Foundation
 /**
  VLCFilterParameter - Filter parameter
  */
-public class VLCFilterParameter: NSObject {
+public final class VLCFilterParameter: NSObject {
 
     private var _properties: [String: Any] = [:]
 
@@ -89,7 +89,7 @@ public class VLCFilterParameter: NSObject {
 /**
  VLCFilter - Filter base class
  */
-public class VLCFilter: NSObject {
+public final class VLCFilter: NSObject {
 
     public var name: String = ""
     public var enabled: Bool = false

@@ -39,7 +39,7 @@ public protocol VLCEventsConfiguring {
  The VLCLibrary is the base library of VLCKit.framework. This object provides a shared instance that exposes the
  internal functionalities of libvlc and libvlc-control.
  */
-public class VLCLibrary: NSObject {
+public final class VLCLibrary: NSObject {
 
     /// The shared library instance
     public static let sharedLibrary = VLCLibrary()
@@ -249,7 +249,7 @@ public enum VLCLogLevel: Int {
 }
 
 // MARK: - External Logger
-private class VLCExternalLogger: NSObject, VLCLogging {
+private final class VLCExternalLogger: NSObject, VLCLogging {
     private var _target: (any VLCLibraryLogReceiverProtocol)?
     private var _level: Int = 0
 
@@ -275,7 +275,7 @@ private class VLCExternalLogger: NSObject, VLCLogging {
 }
 
 // MARK: - Log Context
-public class VLCLogContext: NSObject {
+public final class VLCLogContext: NSObject {
     public var objectId: UInt = 0
     public var objectType: String?
     public var module: String?
