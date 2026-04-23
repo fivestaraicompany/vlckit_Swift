@@ -532,6 +532,9 @@ buildLibVLC() {
     export ac_cv_func_aligned_alloc=no
     export ac_cv_func_timespec_get=no
 
+    # pipe2 is not available on iOS/tvOS/Simulator SDKs
+    export ac_cv_func_pipe2=no
+
     if [ "$BITCODE" = "yes" ]; then
         BITCODEOPTION="--enable-bitcode"
     else
@@ -634,7 +637,7 @@ buildLibVLC() {
     fi
 
     if [ "$SCARY" = "yes" ]; then
-        SCARYFLAG="--enable-dvbpsi --enable-avcodec"
+        SCARYFLAG="--enable-dvbpsi --enable-avcodec --enable-videotoolbox"
     else
         SCARYFLAG="--disable-dca --disable-dvbpsi --disable-avcodec --disable-avformat --disable-zvbi --enable-vpx"
     fi
@@ -706,7 +709,8 @@ buildLibVLC() {
         --disable-mmx \
         --disable-sparkle \
         --disable-addonmanagermodules \
-        --disable-mad > ${out}
+        --disable-mad \
+        --enable-videotoolbox > ${out}
     fi
 
     info "Building libvlc"

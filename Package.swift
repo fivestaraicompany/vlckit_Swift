@@ -22,8 +22,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "MobileVLCKit",
-            url: "https://github.com/fivestaraicompany/vlckit_Swift/releases/download/3.7.9/MobileVLCKit-3.7.8.xcframework.zip",
-            checksum: "6e3d3ef2e36f397b70face072008942ebcc189f4d554258747a002aa236a9750"
+            url: "https://github.com/fivestaraicompany/vlckit_Swift/releases/download/5.0.2/MobileVLCKit-5.0.2.xcframework.zip",
+            checksum: "839ff3392d19950265c711d72bd79bef9ed4e375d19261d790e921f49bd6ba2c"
         ),
         .target(
             name: "CLibVLC",
