@@ -155,7 +155,9 @@ public final class VLCLibrary: NSObject {
             "--http-reconnect",
             "--text-renderer=freetype",
             "--avi-index=3",
-            "--audio-resampler=soxr"
+            "--audio-resampler=soxr",
+            "--avcodec-hw=videotoolbox",
+            "--videotoolbox-temporal-deinterlacing"
         ]
     #else
         let defaultParams: [String] = [
@@ -164,10 +166,12 @@ public final class VLCLibrary: NSObject {
             "--no-video-title-show",
             "--verbose=4",
             "--no-sout-keep",
-            "--vout=macosx",
+            "--vout=caopengllayer",
             "--text-renderer=freetype",
             "--extraintf=macosx_dialog_provider",
-            "--audio-resampler=soxr"
+            "--audio-resampler=soxr",
+            "--avcodec-hw=videotoolbox",
+            "--videotoolbox-temporal-deinterlacing"
         ]
 
         UserDefaults.standard.set(defaultParams, forKey: "VLCParams")
