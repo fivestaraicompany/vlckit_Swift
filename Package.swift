@@ -12,28 +12,23 @@ let package = Package(
         .library(
             name: "MobileVLCKit",
             targets: ["MobileVLCKit"]
-        ),
-        .library(
-            name: "VLCKitSwift",
-            type: .dynamic,
-            targets: ["VLCKitSwift"]
         )
     ],
     targets: [
         .binaryTarget(
-            name: "MobileVLCKit",
-            url: "https://github.com/fivestaraicompany/vlckit_Swift/releases/download/5.0.4/MobileVLCKit-5.0.4.xcframework.zip",
-            checksum: "37c7aae021669e403a38523c6072ef064c27817b0530ef1c3109fac1e784627c"
+            name: "MobileVLCKitBinary",
+            url: "https://github.com/fivestaraicompany/vlckit_Swift/releases/download/5.0.5/MobileVLCKit-5.0.5.xcframework.zip",
+            checksum: "707e92dbf99ed5b632b2598a96cc1b1a4c776aa463d988f29860fb36e5cd75fa"
         ),
         .target(
             name: "CLibVLC",
-            dependencies: ["MobileVLCKit"],
+            dependencies: ["MobileVLCKitBinary"],
             path: "Sources/CLibVLC",
             publicHeadersPath: "include"
         ),
         .target(
-            name: "VLCKitSwift",
-            dependencies: ["MobileVLCKit", "CLibVLC"],
+            name: "MobileVLCKit",
+            dependencies: ["MobileVLCKitBinary", "CLibVLC"],
             path: "Sources/Swift",
             exclude: [
                 "VLC_Helper_Code.swift",
@@ -42,7 +37,7 @@ let package = Package(
         ),
         .testTarget(
             name: "VLCKitTests",
-            dependencies: ["VLCKitSwift"],
+            dependencies: ["MobileVLCKit"],
             path: "Tests/VLCKitTests"
         )
     ]

@@ -6,14 +6,14 @@
 //
 
 import Foundation
-import MobileVLCKit
+import MobileVLCKitBinary
 
 /**
  VLCKitSwift - Main entry point for VLCKit Swift wrapper
  */
 public enum VLCKitSwift {
     /// Version string
-    public static let version = "5.0.4"
+    public static let version = "5.0.5"
     
     /// Shared library instance
     public static let sharedLibrary = VLCLibrary.sharedLibrary
