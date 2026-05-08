@@ -128,6 +128,21 @@ public final class VLCTime: NSObject {
         super.init()
     }
 
+    /// Initialize a time from an Int32 (milliseconds) — ObjC `[VLCTime timeWithInt:]` parity
+    public convenience init(int aInt: Int32) {
+        self.init(timeWithInt: Int64(aInt))
+    }
+
+    /// Initialize a time from an Int64 (milliseconds)
+    public convenience init(int aInt: Int64) {
+        self.init(timeWithInt: aInt)
+    }
+
+    /// Initialize a time from an NSNumber (milliseconds)
+    public convenience init(number aNumber: NSNumber?) {
+        self.init(timeWithNumber: aNumber)
+    }
+
     /// Compare this VLCTime against another
     public func compare(_ aTime: VLCTime) -> ComparisonResult {
         let a = _value?.intValue ?? 0

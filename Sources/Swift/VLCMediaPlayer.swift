@@ -122,10 +122,40 @@ public class VLCMediaPlayer: NSObject {
 
     public var libraryInstance: VLCLibrary?
     public private(set) var state: VLCMediaPlayerState = .stopped
-    public private(set) var time: VLCTime?
+
+    /// Current playback time. Setting this seeks libVLC to the new time.
+    public var time: VLCTime? {
+        get { _time }
+        set {
+            _time = newValue
+            if let playerInstance = _playerInstance, let value = newValue?.value?.int64Value {
+                libvlc_media_player_set_time(playerInstance, value)
+            }
+        }
+    }
+    private var _time: VLCTime?
+
     public private(set) var remainingTime: VLCTime?
-    public private(set) var position: Float = 0.0
-    public internal(set) var media: VLCMedia?
+
+    /// Current playback position (0.0–1.0). Setter seeks libVLC.
+    public var position: Float {
+        get { _position }
+        set {
+            _position = newValue
+            if let playerInstance = _playerInstance {
+                libvlc_media_player_set_position(playerInstance, newValue)
+            }
+        }
+    }
+    private var _position: Float = 0.0
+
+    /// Current media. Setter forwards to libVLC and updates internal state.
+    public var media: VLCMedia? {
+        get { _media }
+        set { setMedia(newValue) }
+    }
+    private var _media: VLCMedia?
+
     public private(set) var snapshots: [String] = []
     public private(set) var audio: VLCAudio?
 
@@ -147,6 +177,7 @@ public class VLCMediaPlayer: NSObject {
         initCommon()
         libraryInstance = VLCLibrary.sharedLibrary
         _playerInstance = libvlc_media_player_new(libraryInstance?.instance)
+        ensureAudio()
         registerObservers()
     }
 
@@ -160,6 +191,8 @@ public class VLCMediaPlayer: NSObject {
             libvlc_media_player_release(oldPlayer)
         }
         _playerInstance = libvlc_media_player_new(library.instance)
+        audio = nil
+        ensureAudio()
     }
 
     /**
@@ -174,6 +207,8 @@ public class VLCMediaPlayer: NSObject {
                 libvlc_media_player_release(oldPlayer)
             }
             _playerInstance = libvlc_media_player_new(libraryInstance?.instance)
+            audio = nil
+            ensureAudio()
         }
 
         registerObservers()
@@ -181,7 +216,7 @@ public class VLCMediaPlayer: NSObject {
     }
 
     private func initCommon() {
-        time = VLCTime.nullTime()
+        _time = VLCTime.nullTime()
         remainingTime = VLCTime.nullTime()
         _libVLCBackgroundQueue = DispatchQueue(label: "libvlcQueue")
     }
@@ -225,6 +260,13 @@ public class VLCMediaPlayer: NSObject {
         return audio
     }
 
+    /// Lazily ensure `audio` is non-nil — ObjC parity (callers expect `player.audio?.volume = ...` to work)
+    private func ensureAudio() {
+        if audio == nil {
+            audio = VLCAudio(mediaPlayerInstance: _playerInstance)
+        }
+    }
+
     // MARK: - Video Tracks
 
     public var numberOfVideoTracks: Int {
@@ -264,16 +306,17 @@ public class VLCMediaPlayer: NSObject {
         return names
     }
 
-    public var videoTrackIndexes: [Int] {
+    /// Video track IDs as `[NSNumber]` — ObjC parity (callers `as? [NSNumber]` cast).
+    public var videoTrackIndexes: [NSNumber] {
         guard let playerInstance = _playerInstance else { return [] }
         let count = Int(libvlc_video_get_track_count(playerInstance))
         guard count > 0 else { return [] }
 
-        var indexes: [Int] = []
+        var indexes: [NSNumber] = []
         var currentTrack: UnsafeMutablePointer<libvlc_track_description_t>? = libvlc_video_get_track_description(playerInstance)
         let firstTrack = currentTrack
         while let track = currentTrack {
-            indexes.append(Int(track.pointee.i_id))
+            indexes.append(NSNumber(value: Int32(track.pointee.i_id)))
             currentTrack = track.pointee.p_next
         }
         if let first = firstTrack {
@@ -289,11 +332,18 @@ public class VLCMediaPlayer: NSObject {
         return Int(libvlc_video_get_spu_count(playerInstance))
     }
 
-    public var currentVideoSubTitleIndex: Int {
-        guard let playerInstance = _playerInstance else { return -1 }
-        let count = Int(libvlc_video_get_spu_count(playerInstance))
-        guard count > 0 else { return -1 }
-        return Int(libvlc_video_get_spu(playerInstance))
+    /// Current subtitle track ID. `Int32` parity with the ObjC API.
+    public var currentVideoSubTitleIndex: Int32 {
+        get {
+            guard let playerInstance = _playerInstance else { return -1 }
+            let count = Int(libvlc_video_get_spu_count(playerInstance))
+            guard count > 0 else { return -1 }
+            return libvlc_video_get_spu(playerInstance)
+        }
+        set {
+            guard let playerInstance = _playerInstance else { return }
+            libvlc_video_set_spu(playerInstance, newValue)
+        }
     }
 
     public func setSubtitle(index: Int) {
@@ -321,16 +371,17 @@ public class VLCMediaPlayer: NSObject {
         return names
     }
 
-    public var videoSubTitlesIndexes: [Int] {
+    /// Subtitle track IDs as `[NSNumber]` — ObjC parity.
+    public var videoSubTitlesIndexes: [NSNumber] {
         guard let playerInstance = _playerInstance else { return [] }
         let count = Int(libvlc_video_get_spu_count(playerInstance))
         guard count > 0 else { return [] }
 
-        var indexes: [Int] = []
+        var indexes: [NSNumber] = []
         var currentTrack: UnsafeMutablePointer<libvlc_track_description_t>? = libvlc_video_get_spu_description(playerInstance)
         let firstTrack = currentTrack
         while let track = currentTrack {
-            indexes.append(Int(track.pointee.i_id))
+            indexes.append(NSNumber(value: Int32(track.pointee.i_id)))
             currentTrack = track.pointee.p_next
         }
         if let first = firstTrack {
@@ -433,22 +484,26 @@ public class VLCMediaPlayer: NSObject {
 
     // MARK: - Playback Rate
 
+    /// Playback rate (1.0 = normal). Setter forwards to libVLC.
     public var rate: Float {
-        guard let playerInstance = _playerInstance else { return 0.0 }
-        return libvlc_media_player_get_rate(playerInstance)
+        get {
+            guard let playerInstance = _playerInstance else { return 0.0 }
+            return libvlc_media_player_get_rate(playerInstance)
+        }
+        set {
+            guard let playerInstance = _playerInstance else { return }
+            libvlc_media_player_set_rate(playerInstance, newValue)
+        }
     }
 
     public func setRate(_ rate: Float) {
-        guard let playerInstance = _playerInstance else { return }
-        libvlc_media_player_set_rate(playerInstance, rate)
+        self.rate = rate
     }
 
     // MARK: - Time & Position
 
     public func setTime(_ time: VLCTime) {
-        guard let playerInstance = _playerInstance else { return }
-        let timeValue = time.value?.int64Value ?? 0
-        libvlc_media_player_set_time(playerInstance, timeValue)
+        self.time = time
     }
 
     public var timeValue: VLCTime? {
@@ -509,11 +564,18 @@ public class VLCMediaPlayer: NSObject {
         return Int(libvlc_audio_get_track_count(playerInstance))
     }
 
-    public var currentAudioTrackIndex: Int {
-        guard let playerInstance = _playerInstance else { return -1 }
-        let count = Int(libvlc_audio_get_track_count(playerInstance))
-        guard count > 0 else { return -1 }
-        return Int(libvlc_audio_get_track(playerInstance))
+    /// Current audio track ID. `Int32` parity with the ObjC API.
+    public var currentAudioTrackIndex: Int32 {
+        get {
+            guard let playerInstance = _playerInstance else { return -1 }
+            let count = Int(libvlc_audio_get_track_count(playerInstance))
+            guard count > 0 else { return -1 }
+            return libvlc_audio_get_track(playerInstance)
+        }
+        set {
+            guard let playerInstance = _playerInstance else { return }
+            libvlc_audio_set_track(playerInstance, newValue)
+        }
     }
 
     public func setAudioTrack(index: Int) {
@@ -541,16 +603,17 @@ public class VLCMediaPlayer: NSObject {
         return names
     }
 
-    public var audioTrackIndexes: [Int] {
+    /// Audio track IDs as `[NSNumber]` — ObjC parity.
+    public var audioTrackIndexes: [NSNumber] {
         guard let playerInstance = _playerInstance else { return [] }
         let count = Int(libvlc_audio_get_track_count(playerInstance))
         guard count > 0 else { return [] }
 
-        var indexes: [Int] = []
+        var indexes: [NSNumber] = []
         var currentTrack: UnsafeMutablePointer<libvlc_track_description_t>? = libvlc_audio_get_track_description(playerInstance)
         let firstTrack = currentTrack
         while let track = currentTrack {
-            indexes.append(Int(track.pointee.i_id))
+            indexes.append(NSNumber(value: Int32(track.pointee.i_id)))
             currentTrack = track.pointee.p_next
         }
         if let first = firstTrack {
@@ -598,14 +661,14 @@ public class VLCMediaPlayer: NSObject {
 
     public func setMedia(_ newMedia: VLCMedia?) {
         guard let newValue = newMedia else {
-            media = nil
+            _media = nil
             if let playerInstance = _playerInstance {
                 libvlc_media_player_set_media(playerInstance, nil)
             }
             return
         }
 
-        media = newValue
+        _media = newValue
         if let playerInstance = _playerInstance {
             libvlc_media_player_set_media(playerInstance, newValue.libVLCMediaDescriptor)
         }
@@ -781,11 +844,11 @@ public class VLCMediaPlayer: NSObject {
     }
 
     func handleTimeChanged(_ newTime: NSNumber) {
-        time = VLCTime(timeWithNumber: newTime)
+        _time = VLCTime(timeWithNumber: newTime)
 
         let currentTime = Double(truncating: newTime) / 1000.0
-        if currentTime > 0 && position > 0.0 {
-            let remaining = currentTime / Double(position) * Double(1.0 - position)
+        if currentTime > 0 && _position > 0.0 {
+            let remaining = currentTime / Double(_position) * Double(1.0 - _position)
             remainingTime = VLCTime(timeWithInt: Int64(-remaining * 1000))
         } else {
             remainingTime = VLCTime.nullTime()
@@ -793,7 +856,7 @@ public class VLCMediaPlayer: NSObject {
     }
 
     func handlePositionChanged(_ newPosition: NSNumber) {
-        position = newPosition.floatValue
+        _position = newPosition.floatValue
     }
 
     func handleStateChanged(_ newState: VLCMediaPlayerState) {
@@ -801,11 +864,11 @@ public class VLCMediaPlayer: NSObject {
     }
 
     func handleMediaChanged(_ newMedia: VLCMedia?) {
-        if let newMedia = newMedia, media !== newMedia {
-            media = newMedia
-            time = VLCTime.nullTime()
+        if let newMedia = newMedia, _media !== newMedia {
+            _media = newMedia
+            _time = VLCTime.nullTime()
             remainingTime = VLCTime.nullTime()
-            position = 0.0
+            _position = 0.0
         }
     }
 

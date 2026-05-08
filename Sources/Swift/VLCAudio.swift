@@ -24,21 +24,21 @@ public final class VLCAudio: NSObject {
     private let volumeMin = 0
     private let volumeStep = 6
 
-    /// The current audio volume (0-200)
-    public var volume: Int {
+    /// The current audio volume (0-200). Stored as `Int32` to match the ObjC API surface.
+    public var volume: Int32 {
         get {
             guard let playerInstance = _playerInstance else { return 0 }
-            return Int(libvlc_audio_get_volume(playerInstance))
+            return libvlc_audio_get_volume(playerInstance)
         }
         set {
             guard let playerInstance = _playerInstance else { return }
-            let clampedVolume = max(volumeMin, min(volumeMax, newValue))
-            libvlc_audio_set_volume(playerInstance, Int32(clampedVolume))
+            let clampedVolume = max(Int32(volumeMin), min(Int32(volumeMax), newValue))
+            libvlc_audio_set_volume(playerInstance, clampedVolume)
         }
     }
 
-    /// Whether audio is muted
-    public var muted: Bool {
+    /// Whether audio is muted (ObjC `isMuted` parity name)
+    public var isMuted: Bool {
         get {
             guard let playerInstance = _playerInstance else { return false }
             return libvlc_audio_get_mute(playerInstance) != 0
@@ -47,6 +47,12 @@ public final class VLCAudio: NSObject {
             guard let playerInstance = _playerInstance else { return }
             libvlc_audio_set_mute(playerInstance, newValue ? 1 : 0)
         }
+    }
+
+    /// Legacy alias for `isMuted`
+    public var muted: Bool {
+        get { isMuted }
+        set { isMuted = newValue }
     }
 
     /// Whether passthrough mode is enabled
@@ -72,12 +78,12 @@ public final class VLCAudio: NSObject {
 
     /// Increase volume
     public func volumeUp() {
-        volume = min(volumeMax, volume + volumeStep)
+        volume = min(Int32(volumeMax), volume + Int32(volumeStep))
     }
 
     /// Decrease volume
     public func volumeDown() {
-        volume = max(volumeMin, volume - volumeStep)
+        volume = max(Int32(volumeMin), volume - Int32(volumeStep))
     }
 
     /// Initialize with a media player instance

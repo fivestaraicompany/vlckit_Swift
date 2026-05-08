@@ -19,6 +19,18 @@ public protocol VLCMediaDelegate: AnyObject {
 }
 
 /**
+ Notification names emitted by VLCMedia
+ */
+public extension Notification.Name {
+    /// Posted when media metadata changes (length, title, art, etc.)
+    static let VLCMediaMetaChanged = Notification.Name("VLCMediaMetaChanged")
+    /// Posted when media parsing has finished (success, fail, or timeout)
+    static let VLCMediaParsedChanged = Notification.Name("VLCMediaParsedChanged")
+    /// Posted when media subitems are added
+    static let VLCMediaSubItemsAdded = Notification.Name("VLCMediaSubItemAdded")
+}
+
+/**
  Media state enumeration
  */
 public enum VLCMediaState: Int {
@@ -125,8 +137,22 @@ public class VLCMedia: NSObject {
     /// Media delegate
     public weak var delegate: (any VLCMediaDelegate)?
 
-    /// Media length
-    public var length: VLCTime?
+    /// Media length in milliseconds — always non-nil so callers can do `media.length.intValue`.
+    /// Returns `VLCTime.nullTime()` if the duration is not yet known.
+    public var length: VLCTime {
+        guard let media = _media else { return VLCTime.nullTime() }
+        let durationMs = libvlc_media_get_duration(media)
+        if durationMs <= 0 {
+            return VLCTime.nullTime()
+        }
+        return VLCTime(timeWithInt: durationMs)
+    }
+
+    /// Whether the media has been parsed (length, tracks, metadata available)
+    public var isParsed: Bool {
+        guard let media = _media else { return false }
+        return libvlc_media_get_parsed_status(media) == libvlc_media_parsed_status_done
+    }
 
     /// Media URL
     public private(set) var url: URL?
@@ -154,6 +180,7 @@ public class VLCMedia: NSObject {
     private var _isArtFetched: Bool = false
     private var _areOthersMetaFetched: Bool = false
     private var _isArtURLFetched: Bool = false
+    private var _eventsHandler: VLCEventsHandler?
 
     /// User data
     public var userData: Any?
@@ -256,6 +283,7 @@ public class VLCMedia: NSObject {
     }
 
     deinit {
+        unregisterEvents()
         if let media = _media {
             libvlc_media_release(media)
         }
@@ -276,12 +304,63 @@ public class VLCMedia: NSObject {
             subitems = VLCMediaList(libVLCMediaList: mlist)
             libvlc_media_list_release(mlist)
         }
+
+        registerEvents()
+    }
+
+    private func registerEvents() {
+        guard let media = _media,
+              let eventsManager = libvlc_media_event_manager(media) else { return }
+
+        let handler = VLCEventsHandler(object: self, configuration: VLCLibrary.sharedEventsConfiguration)
+        _eventsHandler = handler
+
+        let userData = Unmanaged.passUnretained(handler).toOpaque()
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaMetaChanged.rawValue), handleMediaEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaParsedChanged.rawValue), handleMediaEvent, userData)
+        libvlc_event_attach(eventsManager, Int32(libvlc_MediaSubItemAdded.rawValue), handleMediaEvent, userData)
+    }
+
+    private func unregisterEvents() {
+        guard let media = _media,
+              let eventsManager = libvlc_media_event_manager(media),
+              let handler = _eventsHandler else { return }
+
+        let userData = Unmanaged.passUnretained(handler).toOpaque()
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaMetaChanged.rawValue), handleMediaEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaParsedChanged.rawValue), handleMediaEvent, userData)
+        libvlc_event_detach(eventsManager, Int32(libvlc_MediaSubItemAdded.rawValue), handleMediaEvent, userData)
+        _eventsHandler = nil
+    }
+
+    func handleMetaChanged() {
+        delegate?.mediaMetaDataDidChange(self)
+        NotificationCenter.default.post(name: .VLCMediaMetaChanged, object: self)
+    }
+
+    func handleParsedChanged() {
+        delegate?.mediaDidFinishParsing(self)
+        NotificationCenter.default.post(name: .VLCMediaParsedChanged, object: self)
+        // Many ObjC consumers used VLCMediaMetaChanged as the "ready" notification.
+        // Post it again on parse completion so callers waiting for length/track info wake up.
+        NotificationCenter.default.post(name: .VLCMediaMetaChanged, object: self)
+    }
+
+    func handleSubItemsAdded() {
+        if let media = _media {
+            let mlist = libvlc_media_subitems(media)
+            if let mlist = mlist {
+                subitems = VLCMediaList(libVLCMediaList: mlist)
+                libvlc_media_list_release(mlist)
+            }
+        }
+        NotificationCenter.default.post(name: .VLCMediaSubItemsAdded, object: self)
     }
 
     /// Parse media asynchronously
     public func parse() {
         guard let media = _media else { return }
-        libvlc_media_parse_async(media)
+        libvlc_media_parse_with_options(media, libvlc_media_fetch_local, -1)
     }
 
     /// Parse media with options
@@ -314,6 +393,23 @@ public class VLCMedia: NSObject {
     public func addOptions(_ options: [String: String]) {
         options.forEach { key, value in
             let option = value.isEmpty ? key : "\(key)=\(value)"
+            addOption(option)
+        }
+    }
+
+    /// Add options accepting heterogeneous values (`[String: Any]` parity with the ObjC API).
+    /// Values are stringified via `String(describing:)`.
+    public func addOptions(_ options: [String: Any]) {
+        options.forEach { key, value in
+            let stringValue: String
+            if let s = value as? String {
+                stringValue = s
+            } else if let n = value as? NSNumber {
+                stringValue = n.stringValue
+            } else {
+                stringValue = String(describing: value)
+            }
+            let option = stringValue.isEmpty ? key : "\(key)=\(stringValue)"
             addOption(option)
         }
     }
@@ -368,28 +464,29 @@ public class VLCMedia: NSObject {
     }
 
     /// Length wait until date
-    public func length(waitUntilDate date: Date) -> VLCTime? {
-        guard _media != nil, length == nil else { return length }
+    public func length(waitUntilDate date: Date) -> VLCTime {
+        guard _media != nil, length.intValue <= 0 else { return length }
 
         parse()
 
         var status = parseStatus
-        while length == nil && status != .failed && status != .done && date.timeIntervalSinceNow > 0 {
+        while length.intValue <= 0 && status != .failed && status != .done && date.timeIntervalSinceNow > 0 {
             usleep(10000)
             status = parseStatus
         }
 
-        return length ?? VLCTime.nullTime()
+        return length
     }
 
     /// Get media length asynchronously via completion handler
-    public func length(completion: @escaping (VLCTime?) -> Void) {
+    public func length(completion: @escaping (VLCTime) -> Void) {
         guard _media != nil else {
             completion(VLCTime.nullTime())
             return
         }
 
-        if let existingLength = length {
+        let existingLength = length
+        if existingLength.intValue > 0 {
             completion(existingLength)
             return
         }
@@ -405,10 +502,10 @@ public class VLCMedia: NSObject {
                 checkTimer.cancel()
                 return
             }
-            if self.length != nil || self.parseStatus == .failed || self.parseStatus == .done {
+            if self.length.intValue > 0 || self.parseStatus == .failed || self.parseStatus == .done {
                 checkTimer.cancel()
                 DispatchQueue.main.async {
-                    completion(self.length ?? VLCTime.nullTime())
+                    completion(self.length)
                 }
             }
         }
@@ -444,6 +541,27 @@ public class VLCMedia: NSObject {
         case "artworkurl": return libvlc_meta_ArtworkURL
         case "trackid": return libvlc_meta_TrackID
         default: return libvlc_meta_Title
+        }
+    }
+}
+
+// MARK: - VLCMedia C Event Callback
+
+private let handleMediaEvent: @convention(c) (UnsafePointer<libvlc_event_t>?, UnsafeMutableRawPointer?) -> Void = { p_event, userData in
+    guard let event = p_event?.pointee, let userData = userData else { return }
+    let eventsHandler = Unmanaged<VLCEventsHandler>.fromOpaque(userData).takeUnretainedValue()
+
+    eventsHandler.handleEvent { object in
+        guard let media = object as? VLCMedia else { return }
+        switch UInt32(event.type) {
+        case libvlc_MediaMetaChanged.rawValue:
+            media.handleMetaChanged()
+        case libvlc_MediaParsedChanged.rawValue:
+            media.handleParsedChanged()
+        case libvlc_MediaSubItemAdded.rawValue:
+            media.handleSubItemsAdded()
+        default:
+            break
         }
     }
 }
