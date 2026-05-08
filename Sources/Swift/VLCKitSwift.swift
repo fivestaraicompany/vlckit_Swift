@@ -13,7 +13,7 @@ import MobileVLCKit
  */
 public enum VLCKitSwift {
     /// Version string
-    public static let version = "5.0.3"
+    public static let version = "5.0.4"
     
     /// Shared library instance
     public static let sharedLibrary = VLCLibrary.sharedLibrary
