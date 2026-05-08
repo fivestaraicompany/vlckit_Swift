@@ -24,7 +24,30 @@ let package = Package(
             name: "CLibVLC",
             dependencies: ["MobileVLCKitBinary"],
             path: "Sources/CLibVLC",
-            publicHeadersPath: "include"
+            publicHeadersPath: "include",
+            linkerSettings: [
+                // The prebuilt MobileVLCKit static archive has unresolved
+                // references to libiconv (`_iconv*`) and the C++ runtime —
+                // both ship with iOS but are not auto-linked by SPM, so
+                // surface them here so consumer apps don't need OTHER_LDFLAGS.
+                .linkedLibrary("iconv"),
+                .linkedLibrary("c++"),
+                .linkedLibrary("bz2"),
+                .linkedLibrary("xml2"),
+                .linkedFramework("AVFoundation", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("AudioToolbox", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("VideoToolbox", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("CoreImage", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("CoreVideo", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("CoreMedia", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("CoreText", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("CoreGraphics", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("OpenGLES", .when(platforms: [.iOS])),
+                .linkedFramework("QuartzCore", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("Security", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("SystemConfiguration", .when(platforms: [.iOS, .tvOS])),
+                .linkedFramework("UIKit", .when(platforms: [.iOS, .tvOS]))
+            ]
         ),
         .target(
             name: "MobileVLCKit",

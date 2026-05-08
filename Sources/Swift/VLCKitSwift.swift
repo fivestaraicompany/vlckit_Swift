@@ -12,7 +12,7 @@ import Foundation
  */
 public enum VLCKitSwift {
     /// Version string
-    public static let version = "5.0.7"
+    public static let version = "5.0.8"
     
     /// Shared library instance
     public static let sharedLibrary = VLCLibrary.sharedLibrary
