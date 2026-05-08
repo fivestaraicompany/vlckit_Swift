@@ -160,7 +160,7 @@ public final class VLCLibrary: NSObject {
             "--videotoolbox-temporal-deinterlacing"
         ]
     #else
-        let defaultParams: [String] = [
+        return [
             "--play-and-pause",
             "--no-color",
             "--no-video-title-show",
@@ -168,16 +168,15 @@ public final class VLCLibrary: NSObject {
             "--no-sout-keep",
             "--vout=caopengllayer",
             "--text-renderer=freetype",
+            "--freetype-background-opacity=0",
+            "--freetype-outline-thickness=2",
+            "--freetype-shadow-opacity=128",
+            "--freetype-shadow-color=0",
             "--extraintf=macosx_dialog_provider",
             "--audio-resampler=soxr",
             "--avcodec-hw=videotoolbox",
             "--videotoolbox-temporal-deinterlacing"
         ]
-
-        UserDefaults.standard.set(defaultParams, forKey: "VLCParams")
-        UserDefaults.standard.synchronize()
-
-        return defaultParams
     #endif
     }
 
