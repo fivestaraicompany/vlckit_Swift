@@ -1,0 +1,40 @@
+#import <Foundation/Foundation.h>
+
+// Public headers
+#import "VLCLibrary.h"
+#import "VLCTime.h"
+#import "VLCMedia.h"
+#import "VLCMediaList.h"
+#import "VLCMediaMetaData.h"
+#import "VLCMediaPlayer.h"
+#import "VLCMediaListPlayer.h"
+#import "VLCMediaPlayerTitleDescription.h"
+#import "VLCAudio.h"
+#import "VLCAudioEqualizer.h"
+#import "VLCFilter.h"
+#import "VLCAdjustFilter.h"
+#import "VLCRendererDiscoverer.h"
+#import "VLCRendererItem.h"
+#import "VLCMediaDiscoverer.h"
+#import "VLCMediaThumbnailer.h"
+#import "VLCDialogProvider.h"
+#import "VLCVideoCommon.h"
+#import "VLCDrawable.h"
+#import "VLCVideoLayer.h"
+#import "VLCVideoView.h"
+#import "VLCStreamOutput.h"
+#import "VLCStreamSession.h"
+#import "VLCTranscoder.h"
+#import "VLCEventsConfiguration.h"
+#import "VLCLogging.h"
+#import "VLCConsoleLogger.h"
+#import "VLCFileLogger.h"
+#import "VLCLogMessageFormatter.h"
+
+// Internal headers (bridging)
+#import "VLCLibVLCBridging.h"
+#import "VLCMediaPlayer+Internal.h"
+#import "VLCFilter+Internal.h"
+
+// Helper code
+#import "VLCHelperCode.h"

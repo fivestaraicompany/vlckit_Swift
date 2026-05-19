@@ -1,0 +1,12 @@
+framework module VLCKit {
+    umbrella "SwiftHeaders/Public/VLCKit.h"
+    export *
+    module VLCLibVLC {
+        header "VLCLibVLC.h"
+        export *
+    }
+    module VLCHelper {
+        header "SwiftHeaders/Public/VLCHelperCode.h"
+        export *
+    }
+}
